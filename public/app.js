@@ -279,7 +279,7 @@
       const selected = state.selectedRacerIds.has(racer.id);
       const color = racerColor(racer.id);
       const icon = L.divIcon({
-        className: 'racer-icon-wrap', iconSize: [38, 38], iconAnchor: [19, 19], popupAnchor: [0, -20],
+        className: 'racer-icon-wrap', iconSize: [170, 38], iconAnchor: [19, 19], popupAnchor: [0, -20],
         html: `<div class="racer-icon ${selected ? 'selected' : ''}" style="background:${color}"><div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}">${escapeHtml(racer.name)}</div>`,
       });
       let marker = state.racerMarkers.get(racer.id);
@@ -603,6 +603,7 @@
   function startMeasurement(lat, lon, title) {
     clearMeasurement();
     state.map.closePopup();
+    state.map.getContainer().classList.add('map-measuring');
     state.measureStart = { lat, lon, title };
     state.measurePopup = L.popup({ closeOnClick: false, autoClose: false })
       .setLatLng([lat, lon])
@@ -640,6 +641,7 @@
 
   function clearMeasurement() {
     state.measureStart = null;
+    if (state.map) state.map.getContainer().classList.remove('map-measuring');
     if (state.measureLayer) state.measureLayer.clearLayers();
     if (state.measurePopup) {
       const popup = state.measurePopup;
