@@ -16,6 +16,7 @@
   const $ = (id) => document.getElementById(id);
   const state = {
     mapName: '',
+    soloSource: null,
     map: null,
     baseLayer: null,
     baseMapType: 'street',
@@ -55,11 +56,16 @@
 
   $('setup-form').addEventListener('submit', (event) => {
     event.preventDefault();
-    const name = parseMapName($('map-input').value);
-    if (!name) return showSetupError('Paste a Garmin MapShare name or URL, e.g. nhayes or https://share.garmin.com/nhayes');
-    saveMapName(name);
-    location.assign(`/${encodeURIComponent(name)}`);
+    const source = parseSoloSource($('map-input').value);
+    if (!source) return showSetupError('Paste a Garmin MapShare username/link or a FindMeSPOT feed ID/link.');
+    if (source.type === 'garmin-mapshare') {
+      saveMapName(source.name);
+      location.assign(`/${encodeURIComponent(source.name)}`);
+    } else if (source.type === 'spot') {
+      location.assign(`/spot/${encodeURIComponent(source.id)}`);
+    }
   });
+  $('enter-race').addEventListener('click', () => location.assign(TRANSCAPIXABA_PATH));
 
   const menuToggle = $('track-menu-toggle');
   const trackMenu = $('track-menu');
@@ -144,25 +150,24 @@
     return;
   }
 
-  const explicitMap = parseMapName(launchParams.get('map') || '') || parseMapNameFromPath();
+  const explicitSource = parseSoloSource(launchParams.get('spot') || launchParams.get('source') || launchParams.get('map') || '') || parseSoloSourceFromPath();
   const savedMap = loadSavedMapName();
-  if (explicitMap) {
-    $('map-input').value = explicitMap;
-    start(explicitMap);
-  } else if (savedMap) {
-    location.replace(`/${encodeURIComponent(savedMap)}`);
+  if (explicitSource) {
+    $('map-input').value = explicitSource.raw || explicitSource.name || explicitSource.id || '';
+    startSolo(explicitSource);
   } else {
-    $('map-input').value = '';
+    $('map-input').value = savedMap || '';
   }
 
-  async function start(mapName) {
-    state.mapName = mapName;
+  async function startSolo(source) {
+    state.soloSource = source;
+    state.mapName = source.type === 'garmin-mapshare' ? source.name : '';
     $('setup').classList.add('hidden');
     $('tracker').classList.remove('hidden');
-    $('map-name').textContent = mapName;
     state.raceMode = false;
+    updateHeader();
     updateRaceSwitchMenu();
-    saveMapName(mapName);
+    if (source.type === 'garmin-mapshare') saveMapName(source.name);
 
     if (!state.map) initMap();
     startOwnLocation();
@@ -176,7 +181,7 @@
     updateRaceSwitchMenu();
     $('setup').classList.add('hidden');
     $('tracker').classList.remove('hidden');
-    $('map-name').textContent = 'Loading race…';
+    updateHeader('Loading race…');
     if (!state.map) initMap();
     startOwnLocation();
     try {
@@ -186,7 +191,7 @@
       state.sourceFeatureSource = race.sourceFeatureSource;
       state.selectedRacerIds = loadSelectedRacers(race.id);
       state.visibleRaceTrackIds = loadVisibleRaceTracks(race.id);
-      $('map-name').textContent = race.name;
+      updateHeader();
       updateFitButton();
       await refreshAll();
       clearInterval(state.refreshTimer);
@@ -203,7 +208,11 @@
       const tasks = [refreshRaceRacers()];
       if (state.sourceFeatureSource) tasks.push(loadMapFeatures(state.sourceFeatureSource.name));
       await Promise.allSettled(tasks);
-    } else await Promise.allSettled([refreshRacer(), loadMapFeatures()]);
+    } else {
+      const tasks = [refreshRacer()];
+      if (state.soloSource?.type === 'garmin-mapshare') tasks.push(loadMapFeatures());
+      await Promise.allSettled(tasks);
+    }
   }
 
   function initMap() {
@@ -231,11 +240,17 @@
   async function refreshRacer() {
     setText('racer-status', 'refreshing…');
     try {
-      const xmlText = await fetchText(apiUrl('feed'));
-      const racer = parseKml(xmlText);
-      if (!racer) throw new Error('No usable location found in Garmin KML.');
+      let racer = null;
+      if (state.soloSource?.type === 'spot') {
+        racer = await fetchSpotPosition(state.soloSource);
+      } else {
+        const xmlText = await fetchText(apiUrl('feed'));
+        racer = parseKml(xmlText);
+      }
+      if (!racer) throw new Error('No usable location found for this source.');
       racer.history = mergePositionHistory(state.racer, racer);
       state.racer = racer;
+      updateHeader();
       updateRacerLayer();
       updatePanel();
       maybeInitialFit();
@@ -966,17 +981,26 @@
   function switchRaceMode() {
     closeTrackMenu();
     if (state.raceMode) {
-      const savedMap = loadSavedMapName();
-      location.assign(savedMap ? `/${encodeURIComponent(savedMap)}` : '/');
+      location.assign('/');
     } else {
       location.assign(TRANSCAPIXABA_PATH);
     }
   }
 
+  function updateHeader(overrideTitle = '') {
+    const title = overrideTitle || (state.raceMode ? (state.race?.name || 'Race') : 'MapShare Companion');
+    const subtitle = state.raceMode ? '' : (state.racer?.name || state.soloSource?.name || state.soloSource?.id || state.mapName || '—');
+    setText('app-title', title);
+    setText('map-name', subtitle);
+    $('app-subtitle').classList.toggle('hidden', !subtitle || state.raceMode);
+    document.title = state.raceMode ? title : `${title}${subtitle && subtitle !== '—' ? ` · ${subtitle}` : ''}`;
+  }
+
   function updateRaceSwitchMenu() {
     const button = $('switch-race');
-    button.textContent = state.raceMode ? 'Exit race' : 'Enter race';
-    button.title = state.raceMode ? 'Return to solo racer mode' : 'Enter Transcapixaba 2026 race mode';
+    button.textContent = state.raceMode ? 'Leave race mode' : 'Enter race';
+    button.title = state.raceMode ? 'Return to the launcher' : 'Enter Transcapixaba 2026 race mode';
+    $('change-map').classList.toggle('hidden', state.raceMode);
   }
 
   function toggleBaseMap() {
@@ -1221,11 +1245,20 @@
   function normalizeHeader(value) { return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, ''); }
   function slugify(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80); }
 
-  function parseMapNameFromPath() {
+  function parseSoloSourceFromPath() {
     const parts = location.pathname.split('/').filter(Boolean);
-    if (parts[0] === 'race') return '';
-    const first = parts[0] || '';
-    return first && first !== 'api' ? sanitizeName(first) : '';
+    if (parts[0] === 'race' || parts[0] === 'api') return null;
+    if (parts[0] === 'spot') {
+      const id = parseSpotSource(parts[1] || '', 'SPOT');
+      return id ? { type: 'spot', id, raw: parts[1] || '' } : null;
+    }
+    const name = parseMapName(parts[0] || '');
+    return name ? { type: 'garmin-mapshare', name, raw: parts[0] || '' } : null;
+  }
+
+  function parseMapNameFromPath() {
+    const source = parseSoloSourceFromPath();
+    return source?.type === 'garmin-mapshare' ? source.name : '';
   }
 
   function parseSharedMap(params) {
@@ -1239,6 +1272,15 @@
       if (parsed) return parsed;
     }
     return '';
+  }
+
+  function parseSoloSource(input) {
+    const raw = String(input || '').trim();
+    if (!raw) return null;
+    const spotId = parseSpotSource(raw, 'SPOT');
+    if (spotId) return { type: 'spot', id: spotId, raw };
+    const garminName = parseMapName(raw);
+    return garminName ? { type: 'garmin-mapshare', name: garminName, raw } : null;
   }
 
   function parseMapName(input) {

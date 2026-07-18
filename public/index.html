@@ -21,12 +21,13 @@
         <h1>MapShare Companion</h1>
         <a class="donate-link" href="https://ko-fi.com/mapsharecompanion" target="_blank" rel="noopener">Donate</a>
       </div>
-      <p>A support-crew map for Garmin MapShare races. Paste a public Garmin MapShare username or URL.</p>
+      <p>A support-crew map for races and solo tracking.</p>
+      <button id="enter-race" class="setup-primary" type="button">Enter Transcapixaba 2026 Race</button>
       <form id="setup-form">
-        <input id="map-input" autocomplete="off" inputmode="url" placeholder="nhayes or https://share.garmin.com/nhayes" />
-        <button type="submit">Start tracker</button>
+        <input id="map-input" autocomplete="off" inputmode="url" placeholder="Garmin or SPOT link / username" />
+        <button type="submit">Track solo</button>
       </form>
-      <p class="hint">Works with public links like <code>https://share.garmin.com/&lt;name&gt;</code>.</p>
+      <p class="hint">Examples: <code>share.garmin.com/nhayes</code>, <code>nhayes</code>, or a FindMeSPOT feed ID/link.</p>
       <p id="setup-error" class="setup-error" role="alert"></p>
     </section>
   </main>
@@ -35,10 +36,10 @@
     <header class="top">
       <div>
         <div class="page-title-row compact">
-          <div class="title">MapShare Companion</div>
+          <div id="app-title" class="title">MapShare Companion</div>
           <a class="donate-link" href="https://ko-fi.com/mapsharecompanion" target="_blank" rel="noopener">Donate</a>
         </div>
-        <div class="subtitle">Garmin MapShare: <b id="map-name">—</b></div>
+        <div id="app-subtitle" class="subtitle"><b id="map-name">—</b></div>
       </div>
       <div class="header-actions">
         <button id="refresh" class="icon-button" type="button" title="Refresh Garmin data" aria-label="Refresh Garmin data">⟳</button>
