@@ -496,7 +496,16 @@
     if (state.visibleRaceTrackIds.has(id)) state.visibleRaceTrackIds.delete(id);
     else state.visibleRaceTrackIds.add(id);
     saveVisibleRaceTracks(state.race.id, state.visibleRaceTrackIds);
-    renderRaceRacers();
+    renderRaceTracks();
+    refreshOpenRacerPopup(id);
+  }
+
+  function refreshOpenRacerPopup(id) {
+    const racer = state.racers.find((item) => item.id === id);
+    const marker = state.racerMarkers.get(id);
+    if (!racer || !marker) return;
+    const popup = marker.getPopup && marker.getPopup();
+    if (popup) popup.setContent(raceRacerPopupHtml(racer));
   }
 
   async function loadMapFeatures(mapName = state.mapName) {
@@ -1485,6 +1494,7 @@
     else state.selectedRacerIds.add(id);
     saveSelectedRacers(state.race.id, state.selectedRacerIds);
     renderRaceRacers();
+    refreshOpenRacerPopup(id);
     updatePanel();
     updateConnector();
   }
