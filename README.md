@@ -18,6 +18,7 @@ The primary deliverable is a standalone Vercel webapp. It asks for a Garmin user
 - distance measuring: choose **Measure from here** in any location popup, then tap map points to update a straight-line distance until you close the measuring popup or click outside the map
 - subtle distance label on the dotted line between your location and the racer
 - remembered base map preference: Street uses OpenStreetMap, Topo uses OpenTopoMap elevation contours
+- top-right menu can switch between solo mode and Transcapixaba 2026 race mode
 - KML import from the top-right menu or supported Android share/open flows, persisted locally and toggleable from the action row
 - Garmin/source features are separate from imported KML; when detected, they can be shown/hidden from the top-right menu
 

@@ -5,6 +5,7 @@
   const BASE_MAP_KEY = 'garminRaceTracker.baseMap';
   const KML_KEY = 'garminRaceTracker.importedKml';
   const SOURCE_FEATURES_KEY = 'garminRaceTracker.sourceFeaturesVisible';
+  const TRANSCAPIXABA_PATH = '/race/transcapixaba-2026';
   const REFRESH_MS = 60000;
   const STALE_AFTER_MIN = 15;
 
@@ -67,6 +68,7 @@
     trackMenu.classList.toggle('hidden', !willOpen);
     menuToggle.setAttribute('aria-expanded', String(willOpen));
   });
+  $('switch-race').addEventListener('click', switchRaceMode);
   $('import-kml').addEventListener('click', () => {
     closeTrackMenu();
     $('kml-file').click();
@@ -145,6 +147,8 @@
     $('setup').classList.add('hidden');
     $('tracker').classList.remove('hidden');
     $('map-name').textContent = mapName;
+    state.raceMode = false;
+    updateRaceSwitchMenu();
     saveMapName(mapName);
 
     if (!state.map) initMap();
@@ -156,6 +160,7 @@
 
   async function startRaceFromSheet(spec) {
     state.raceMode = true;
+    updateRaceSwitchMenu();
     $('setup').classList.add('hidden');
     $('tracker').classList.remove('hidden');
     $('map-name').textContent = 'Loading race…';
@@ -741,6 +746,22 @@
     button.title = `${w} waypoints, ${r} routes${hasHistory ? ', history track' : ''}`;
   }
 
+  function switchRaceMode() {
+    closeTrackMenu();
+    if (state.raceMode) {
+      const savedMap = loadSavedMapName();
+      location.assign(savedMap ? `/${encodeURIComponent(savedMap)}` : '/');
+    } else {
+      location.assign(TRANSCAPIXABA_PATH);
+    }
+  }
+
+  function updateRaceSwitchMenu() {
+    const button = $('switch-race');
+    button.textContent = state.raceMode ? 'Exit race' : 'Enter race';
+    button.title = state.raceMode ? 'Return to solo racer mode' : 'Enter Transcapixaba 2026 race mode';
+  }
+
   function toggleBaseMap() {
     setBaseMap(state.baseMapType === 'topo' ? 'street' : 'topo');
   }
@@ -839,7 +860,7 @@
   function maybeInitialFit() { if (state.raceMode) { if (!state.firstFitDone && racePositions().length) { fitRaceTargets(); state.firstFitDone = true; } return; } if (!state.firstFitDone && state.racer && state.me) { fitBoth(); state.firstFitDone = true; } else if (!state.firstFitDone && state.racer) centerRacer(); }
 
   function parseRaceSheetParams(params, pathname) {
-    if (pathname === '/race/transcapixaba-2026') return { id: '1h-iNS8rby-P8WkEKP98rxMRpEMdOrUjznQxjr9weH8g', gid: '0', name: 'Transcapixaba 2026' };
+    if (pathname === TRANSCAPIXABA_PATH) return { id: '1h-iNS8rby-P8WkEKP98rxMRpEMdOrUjznQxjr9weH8g', gid: '0', name: 'Transcapixaba 2026' };
     const raw = params.get('raceSheet') || params.get('sheet') || params.get('sheetId') || '';
     if (!raw) return null;
     const parsed = parseGoogleSheetRef(raw);
