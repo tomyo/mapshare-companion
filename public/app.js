@@ -470,7 +470,7 @@
     const selected = state.selectedRacerIds.has(racer.id);
     const trackVisible = state.visibleRaceTrackIds.has(racer.id);
     const hasTrack = !!(r.history && r.history.length > 1);
-    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(r.time || r.timeUtc || '—')}<br>Source: ${escapeHtml(r.sourceLabel || r.sourceName || sourceTypeLabel(r.sourceType))}`;
+    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(r.sourceLabel || r.sourceName || sourceTypeLabel(r.sourceType))}`;
     const trackButton = hasTrack
       ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>`
       : '<button type="button" disabled title="The tracking source has not published enough history points for this racer yet">No track yet</button>';
@@ -1087,7 +1087,7 @@
     });
     if (!state.racerMarker) state.racerMarker = L.marker(ll, { icon, zIndexOffset: 4000, title: r.name, bubblingMouseEvents: false }).addTo(state.layers);
     else { state.racerMarker.setLatLng(ll); state.racerMarker.setIcon(icon); }
-    state.racerMarker.bindPopup(locationPopupHtml(r.name, r.lat, r.lon, `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Course: ${escapeHtml(r.courseText)}<br>Updated: ${escapeHtml(r.time || r.timeUtc || '—')}`));
+    state.racerMarker.bindPopup(locationPopupHtml(r.name, r.lat, r.lon, `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Course: ${escapeHtml(r.courseText)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}`));
     if (r.history) state.racerTrail.setLatLngs(r.history.map((p) => [p.lat, p.lon]));
     updateSourceFeaturesMenu();
     updateConnector();
@@ -1896,7 +1896,25 @@
   function dedupeLatLon(points) { const out = []; let prev = null; for (const p of points) { if (!prev || Math.abs(prev.lat - p.lat) > 1e-7 || Math.abs(prev.lon - p.lon) > 1e-7) out.push(p); prev = p; } return out; }
   function dedupePositionHistory(points) { const out = []; const seen = new Set(); for (const p of dedupeLatLon(points)) { const key = `${Number(p.lat).toFixed(7)},${Number(p.lon).toFixed(7)}`; if (seen.has(key)) continue; seen.add(key); out.push(p); } return out; }
   function parseGarminUtc(s) { if (!s) return 0; const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)$/i); if (!m) return Date.parse(`${s} UTC`) || Date.parse(s) || 0; let [, mo, da, yr, hr, mi, se, ap] = m; let h = Number(hr) % 12; if (ap.toUpperCase() === 'PM') h += 12; return Date.UTC(Number(yr), Number(mo) - 1, Number(da), h, Number(mi), Number(se)); }
-  function infoText(r) { const parts = [`Updated: ${r.time || r.timeUtc || '—'}`]; if (r.ele != null) parts.push(`Elev: ${Math.round(r.ele)} m`); if (r.gpsFix) parts.push(`GPS fix: ${r.gpsFix}`); if (r.emergency === 'True') parts.push('EMERGENCY'); if (r.text) parts.push(`Text: ${r.text}`); return parts.join(' · '); }
+  function infoText(r) { const parts = [`Updated: ${formatUpdatedTime(r)}`]; if (r.ele != null) parts.push(`Elev: ${Math.round(r.ele)} m`); if (r.gpsFix) parts.push(`GPS fix: ${r.gpsFix}`); if (r.emergency === 'True') parts.push('EMERGENCY'); if (r.text) parts.push(`Text: ${r.text}`); return parts.join(' · '); }
+  function formatUpdatedTime(r) {
+    if (!r?.utcMs) return r?.time || r?.timeUtc || '—';
+    const local = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(r.utcMs));
+    const age = formatAge(Date.now() - r.utcMs);
+    return age ? `${local} · ${age}` : local;
+  }
+  function formatAge(ageMs) {
+    if (!Number.isFinite(ageMs)) return '';
+    if (ageMs < -60000) return 'future';
+    const seconds = Math.max(0, Math.round(ageMs / 1000));
+    if (seconds < 45) return 'just now';
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 90) return `${minutes} min ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 48) return `${hours} h ago`;
+    const days = Math.round(hours / 24);
+    return `${days} d ago`;
+  }
   function staleMinutes(r) { return r.utcMs ? (Date.now() - r.utcMs) / 60000 : null; }
   function formatDistance(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
   function formatKm(m) { return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
