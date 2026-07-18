@@ -9,6 +9,7 @@ The primary deliverable is a standalone Vercel webapp. It asks for a Garmin user
 - distance and bearing from you to the racer
 - racer speed, course, GPS fix, elevation, and last update
 - Street/topographic map with both markers and a connecting line
+- single-racer Garmin MapShare tracking, or multi-racer race rosters from Google Sheets
 - Garmin MapShare waypoints and routes from `/<mapshare-name>/Waypoints` and `/<mapshare-name>/routes/`
 - any track/history points present in the public KML feed
 - quick header refresh button plus controls for Fit both, Racer, Me, Street/Topo map toggle, and Hide/Show KML
@@ -52,7 +53,16 @@ Production deployment:
 https://mapshare-companion.vercel.app/          # asks for username / shared URL
 https://mapshare-companion.vercel.app/?map=nhayes
 https://mapshare-companion.vercel.app/nhayes
+https://mapshare-companion.vercel.app/?sheet=<google-sheet-id>&gid=0
 ```
+
+The Google Sheet must be public/readable by link. Race roster columns:
+
+```text
+Name | GarminLink | GsmLink | FlymasterLink | Notes
+```
+
+For now, `GarminLink` / `Garmin` / `MapShare` columns are supported. Other source columns are preserved conceptually but ignored until providers are added. If a racer has multiple Garmin source columns, the app fetches all of them and uses the newest valid Garmin position.
 
 Generic usage pattern:
 

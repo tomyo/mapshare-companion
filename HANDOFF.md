@@ -36,20 +36,22 @@ https://share.garmin.com/nhayes
 - Imported KML is stored in `localStorage` under `garminRaceTracker.importedKml`, rendered as an independent map layer, and toggled from the action row. KML can be imported from the menu, Android/browser share target, and supported File Handling API launches.
 - Garmin/source features are separate from imported KML. If source features are detected, the top-right menu shows `Hide/Show Garmin features`; its visibility preference is stored under `garminRaceTracker.sourceFeaturesVisible`.
 - The top-right `⋮` tracker menu currently has `Import KML`, conditional `Hide/Show Garmin features`, and `Change racer`; Change racer clears the saved `localStorage` racer and navigates back to `/`.
-- Explicit targets auto-start:
+- Explicit single-racer targets auto-start:
   - `/<mapshare-name>`
   - `?map=<mapshare-name>`
+- Google Sheet race rosters load with `?sheet=<google-sheet-id-or-url>&gid=<gid>`. Expected columns are a racer name column (`Name`, `Racer`, `Pilot`, etc.) plus source columns such as `GarminLink`, `GsmLink`, `FlymasterLink`. For now only Garmin/MapShare sources are actively fetched; unknown source columns are retained on the racer object for future providers.
+- In sheet race mode, each racer can have multiple Garmin source columns. The app refreshes all supported Garmin sources and uses the newest valid position per racer.
 - The normalized MapShare name is stored in `localStorage` under `garminRaceTracker.mapName`.
 - The setup and tracker headers include a small `Donate` link to `https://ko-fi.com/mapsharecompanion`.
 - The tracker shows:
-  - racer/Garmin position from public KML
+  - single racer/Garmin position from public KML or multi-racer Google Sheet roster
   - observer phone GPS location
   - distance and bearing from observer to racer
   - prominent speed/elevation plus GPS fix/last-update metadata; course remains in racer popup/info where available
   - Street/topographic map with racer marker, observer marker, accuracy circle, and connector line
   - Garmin waypoints/routes and KML history/track points when available
   - imported KML points/lines as a source-independent map/course layer
-  - quick header refresh button plus controls: Fit both, Racer, Me, Street/Topo base map toggle, Hide/Show KML
+  - quick header refresh button plus controls: Fit all/selected, Racer(s), Me, Street/Topo base map toggle, Hide/Show KML
   - contextual map popups: tap racer, observer, waypoint, or any map point to open that point in Google Maps or OSM
   - popup action `Measure from here`: enters measuring mode, then map taps update a straight-line distance line/label until the measurement popup is closed or the user clicks outside the map
   - the dotted observer→racer connector includes a subtle permanent distance label in km

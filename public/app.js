@@ -21,6 +21,10 @@
     trackLayer: null,
     kmlLayer: null,
     racerMarker: null,
+    racerMarkers: new Map(),
+    race: null,
+    racers: [],
+    selectedRacerIds: new Set(),
     meMarker: null,
     accuracyCircle: null,
     connector: null,
@@ -32,6 +36,7 @@
     geoWatch: null,
     racer: null,
     me: null,
+    raceMode: false,
     mapFeatures: { waypoints: [], routes: [], collections: null },
     sourceFeaturesVisible: true,
     sourceFeaturesDetected: false,
@@ -79,6 +84,13 @@
     }
   });
   document.addEventListener('click', (event) => {
+    const followButton = event.target.closest('[data-follow-racer]');
+    if (followButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSelectedRacer(followButton.dataset.followRacer);
+      return;
+    }
     const measureButton = event.target.closest('[data-measure-lat]');
     if (measureButton) {
       event.preventDefault();
@@ -100,6 +112,12 @@
   const launchParams = new URL(location.href).searchParams;
   if (launchParams.has('share-target')) {
     handleShareTargetLaunch();
+    return;
+  }
+
+  const raceSheet = parseRaceSheetParams(launchParams);
+  if (raceSheet) {
+    startRaceFromSheet(raceSheet);
     return;
   }
 
@@ -135,8 +153,33 @@
     state.refreshTimer = setInterval(refreshAll, REFRESH_MS);
   }
 
+  async function startRaceFromSheet(spec) {
+    state.raceMode = true;
+    $('setup').classList.add('hidden');
+    $('tracker').classList.remove('hidden');
+    $('map-name').textContent = 'Loading race…';
+    if (!state.map) initMap();
+    startOwnLocation();
+    try {
+      const race = await loadRaceFromSheet(spec);
+      state.race = race;
+      state.racers = race.racers;
+      state.selectedRacerIds = loadSelectedRacers(race.id);
+      $('map-name').textContent = race.name;
+      updateFitButton();
+      await refreshAll();
+      clearInterval(state.refreshTimer);
+      state.refreshTimer = setInterval(refreshAll, REFRESH_MS);
+    } catch (err) {
+      console.error(err);
+      setText('racer-status', 'race error');
+      setText('info', err.message || String(err));
+    }
+  }
+
   async function refreshAll() {
-    await Promise.allSettled([refreshRacer(), loadMapFeatures()]);
+    if (state.raceMode) await refreshRaceRacers();
+    else await Promise.allSettled([refreshRacer(), loadMapFeatures()]);
   }
 
   function initMap() {
@@ -177,6 +220,68 @@
     }
   }
 
+  async function refreshRaceRacers() {
+    if (!state.racers.length) return;
+    setText('racer-status', 'refreshing…');
+    await Promise.allSettled(state.racers.map(refreshRaceRacer));
+    renderRaceRacers();
+    updatePanel();
+    updateConnector();
+    maybeInitialFit();
+  }
+
+  async function refreshRaceRacer(racer) {
+    const garminSources = racer.sources.filter((source) => source.type === 'garmin-mapshare');
+    const results = await Promise.allSettled(garminSources.map(async (source) => {
+      const position = parseKml(await fetchText(apiUrlForName(source.name, 'feed')));
+      if (!position) throw new Error('No position');
+      return Object.assign(position, { racerId: racer.id, name: racer.name, sourceLabel: source.label, sourceName: source.name });
+    }));
+    const positions = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+    positions.sort((a, b) => (b.utcMs || 0) - (a.utcMs || 0));
+    racer.position = positions[0] || null;
+    racer.error = positions.length ? '' : (results.find((r) => r.status === 'rejected')?.reason?.message || 'No supported source position');
+  }
+
+  function renderRaceRacers() {
+    const seen = new Set();
+    for (const racer of state.racers) {
+      if (!racer.position) continue;
+      seen.add(racer.id);
+      const r = racer.position;
+      const ll = [r.lat, r.lon];
+      const selected = state.selectedRacerIds.has(racer.id);
+      const color = racerColor(racer.id);
+      const icon = L.divIcon({
+        className: 'racer-icon-wrap', iconSize: [38, 38], iconAnchor: [19, 19], popupAnchor: [0, -20],
+        html: `<div class="racer-icon ${selected ? 'selected' : ''}" style="background:${color}"><div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div>`,
+      });
+      let marker = state.racerMarkers.get(racer.id);
+      if (!marker) {
+        marker = L.marker(ll, { icon, zIndexOffset: selected ? 4500 : 4000, title: racer.name, bubblingMouseEvents: false }).addTo(state.layers);
+        state.racerMarkers.set(racer.id, marker);
+      } else {
+        marker.setLatLng(ll);
+        marker.setIcon(icon);
+        marker.setZIndexOffset(selected ? 4500 : 4000);
+      }
+      marker.bindPopup(raceRacerPopupHtml(racer));
+    }
+    for (const [id, marker] of state.racerMarkers.entries()) {
+      if (!seen.has(id)) {
+        state.layers.removeLayer(marker);
+        state.racerMarkers.delete(id);
+      }
+    }
+  }
+
+  function raceRacerPopupHtml(racer) {
+    const r = racer.position;
+    const selected = state.selectedRacerIds.has(racer.id);
+    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(r.time || r.timeUtc || '—')}<br>Source: ${escapeHtml(r.sourceLabel || r.sourceName || 'Garmin')}`;
+    return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button></div>`;
+  }
+
   async function loadMapFeatures() {
     try {
       const [waypointsRes, routesRes, collectionsRes] = await Promise.allSettled([
@@ -197,7 +302,11 @@
   }
 
   function apiUrl(type) {
-    return `/api/garmin?name=${encodeURIComponent(state.mapName)}&type=${encodeURIComponent(type)}&_=${Date.now()}`;
+    return apiUrlForName(state.mapName, type);
+  }
+
+  function apiUrlForName(name, type) {
+    return `/api/garmin?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&_=${Date.now()}`;
   }
 
   async function fetchText(url) {
@@ -370,9 +479,10 @@
   }
 
   function updateConnector() {
-    if (state.racer && state.me) {
+    const target = state.raceMode ? connectorRaceTarget() : state.racer;
+    if (target && state.me) {
       const a = [state.me.lat, state.me.lon];
-      const b = [state.racer.lat, state.racer.lon];
+      const b = [target.lat, target.lon];
       state.connector.setLatLngs([a, b]);
       if (state.connector.getTooltip()) state.connector.unbindTooltip();
       state.connector.bindTooltip(formatKm(distanceM(a[0], a[1], b[0], b[1])), {
@@ -388,6 +498,7 @@
   }
 
   function updatePanel() {
+    if (state.raceMode) return updateRacePanel();
     const r = state.racer;
     if (!r) return;
     const stale = staleMinutes(r);
@@ -647,15 +758,146 @@
     button.title = `Map: ${current}. Switch to ${next}.`;
   }
 
+  function updateRacePanel() {
+    const positions = racePositions();
+    const stale = positions.filter((r) => staleMinutes(r) != null && staleMinutes(r) > STALE_AFTER_MIN).length;
+    const selected = selectedRacePositions();
+    setText('racer-status', `${positions.length}/${state.racers.length} live`);
+    setText('speed', state.selectedRacerIds.size ? `${selected.length} selected` : 'all');
+    setText('elevation', stale ? `${stale} stale` : '—');
+    const target = connectorRaceTarget();
+    if (state.me && target) {
+      const d = distanceM(state.me.lat, state.me.lon, target.lat, target.lon);
+      const b = bearingDeg(state.me.lat, state.me.lon, target.lat, target.lon);
+      setText('range', `${formatDistance(d)} · ${Math.round(b)}°`);
+    } else setText('range', state.me ? 'no racers' : 'waiting GPS');
+    setText('info', `Race: ${state.race?.name || '—'} · ${state.racers.length} racers · ${supportedSourceCount()} Garmin sources`);
+    updateFitButton();
+  }
+
+  function racePositions() { return state.racers.map((r) => r.position).filter(Boolean); }
+  function selectedRacePositions() { return state.racers.filter((r) => state.selectedRacerIds.has(r.id)).map((r) => r.position).filter(Boolean); }
+  function raceFitTargets() { const selected = selectedRacePositions(); return selected.length ? selected : racePositions(); }
+  function connectorRaceTarget() {
+    const targets = raceFitTargets();
+    if (!targets.length) return null;
+    if (!state.me) return targets[0];
+    return targets.slice().sort((a, b) => distanceM(state.me.lat, state.me.lon, a.lat, a.lon) - distanceM(state.me.lat, state.me.lon, b.lat, b.lon))[0];
+  }
+
+  function fitRaceTargets() {
+    const targets = raceFitTargets();
+    const bounds = targets.map((r) => [r.lat, r.lon]);
+    if (state.me) bounds.push([state.me.lat, state.me.lon]);
+    if (bounds.length) state.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+  }
+
+  function toggleSelectedRacer(id) {
+    if (!id || !state.raceMode) return;
+    if (state.selectedRacerIds.has(id)) state.selectedRacerIds.delete(id);
+    else state.selectedRacerIds.add(id);
+    saveSelectedRacers(state.race.id, state.selectedRacerIds);
+    renderRaceRacers();
+    updatePanel();
+    updateConnector();
+  }
+
+  function updateFitButton() {
+    $('fit-both').textContent = state.raceMode && state.selectedRacerIds.size ? 'Fit selected' : state.raceMode ? 'Fit all' : 'Fit both';
+    $('center-racer').textContent = state.raceMode ? 'Racers' : 'Racer';
+  }
+
+  function supportedSourceCount() { return state.racers.reduce((sum, racer) => sum + racer.sources.filter((s) => s.type === 'garmin-mapshare').length, 0); }
+
   function fitBoth() {
+    if (state.raceMode) return fitRaceTargets();
     if (!state.racer) return;
     if (state.me) state.map.fitBounds([[state.me.lat, state.me.lon], [state.racer.lat, state.racer.lon]], { padding: [40, 40], maxZoom: 16 });
     else centerRacer();
   }
 
-  function centerRacer() { if (state.racer) state.map.setView([state.racer.lat, state.racer.lon], Math.max(state.map.getZoom(), 15)); }
+  function centerRacer() { if (state.raceMode) return fitRaceTargets(); if (state.racer) state.map.setView([state.racer.lat, state.racer.lon], Math.max(state.map.getZoom(), 15)); }
   function centerMe() { if (state.me) state.map.setView([state.me.lat, state.me.lon], Math.max(state.map.getZoom(), 15)); }
-  function maybeInitialFit() { if (!state.firstFitDone && state.racer && state.me) { fitBoth(); state.firstFitDone = true; } else if (!state.firstFitDone && state.racer) centerRacer(); }
+  function maybeInitialFit() { if (state.raceMode) { if (!state.firstFitDone && racePositions().length) { fitRaceTargets(); state.firstFitDone = true; } return; } if (!state.firstFitDone && state.racer && state.me) { fitBoth(); state.firstFitDone = true; } else if (!state.firstFitDone && state.racer) centerRacer(); }
+
+  function parseRaceSheetParams(params) {
+    const raw = params.get('raceSheet') || params.get('sheet') || params.get('sheetId') || '';
+    if (!raw) return null;
+    const parsed = parseGoogleSheetRef(raw);
+    if (!parsed.id) return null;
+    return { id: parsed.id, gid: params.get('gid') || parsed.gid || '0', name: params.get('race') || params.get('raceName') || '' };
+  }
+
+  function parseGoogleSheetRef(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return { id: '', gid: '' };
+    try {
+      const url = new URL(raw);
+      const id = url.pathname.match(/\/spreadsheets\/d\/([^/]+)/)?.[1] || '';
+      const gid = url.searchParams.get('gid') || url.hash.match(/gid=([^&]+)/)?.[1] || '';
+      return { id, gid };
+    } catch (_) {
+      return { id: raw, gid: '' };
+    }
+  }
+
+  async function loadRaceFromSheet(spec) {
+    const rows = await getSheetData(spec.id, spec.gid);
+    const racers = rows.map(rowToRacer).filter(Boolean);
+    if (!racers.length) throw new Error('No racers with Garmin sources found in sheet.');
+    return { id: `sheet:${spec.id}:${spec.gid}`, name: spec.name || 'Race sheet', racers };
+  }
+
+  function rowToRacer(row, index) {
+    const name = pickFirst(row, ['RacerName', 'racer_name', 'Racer', 'PilotName', 'Pilot', 'Name', 'name']) || `Racer ${index + 1}`;
+    const id = slugify(name) || `racer-${index + 1}`;
+    const reserved = new Set(['racername', 'racer_name', 'racer', 'pilotname', 'pilot', 'name', 'notes', 'note']);
+    const sources = [];
+    const unsupportedSources = [];
+    for (const [label, value] of Object.entries(row)) {
+      if (!value || reserved.has(normalizeHeader(label))) continue;
+      const garminName = parseGarminSource(value, label);
+      if (garminName) sources.push({ type: 'garmin-mapshare', label, name: garminName, raw: String(value).trim() });
+      else unsupportedSources.push({ type: 'unknown', label, raw: String(value).trim() });
+    }
+    if (!sources.length && !unsupportedSources.length) return null;
+    return { id, name: String(name).trim(), sources, unsupportedSources, position: null, error: '' };
+  }
+
+  function parseGarminSource(value, label) {
+    const raw = String(value || '').trim();
+    const isGarminLabel = /garmin|mapshare|inreach/i.test(label || '');
+    if (/share\.garmin\.com/i.test(raw)) return parseMapName(raw);
+    if (isGarminLabel && /^[A-Za-z0-9_-]{1,100}$/.test(raw)) return raw;
+    return '';
+  }
+
+  async function getSheetData(id, gid = 0) {
+    const text = await (await fetch(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}`)).text();
+    const jsonString = text.match(/(?<="table":).*(?=}\);)/s)?.[0];
+    if (!jsonString) throw new Error('Could not parse Google Sheet response.');
+    const json = JSON.parse(jsonString);
+    const headers = json.cols.map((column) => String(column.label || '').trim());
+    return json.rows.map((r) => {
+      const row = {};
+      headers.forEach((header, index) => {
+        if (!header) return;
+        const cell = r.c[index];
+        let value = cell && (cell.f ?? cell.v ?? '');
+        if (typeof value === 'string') value = value.trim();
+        row[header] = value;
+      });
+      return row;
+    }).filter((row) => Object.values(row).some(Boolean));
+  }
+
+  function pickFirst(row, names) {
+    const wanted = new Set(names.map(normalizeHeader));
+    for (const [key, value] of Object.entries(row)) if (wanted.has(normalizeHeader(key)) && value) return value;
+    return '';
+  }
+  function normalizeHeader(value) { return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, ''); }
+  function slugify(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80); }
 
   function parseMapNameFromPath() {
     const first = location.pathname.split('/').filter(Boolean)[0] || '';
@@ -698,6 +940,10 @@
   function saveBaseMapType(type) { try { localStorage.setItem(BASE_MAP_KEY, type); } catch (_) {} }
   function loadSourceFeaturesVisible() { try { return localStorage.getItem(SOURCE_FEATURES_KEY) !== 'false'; } catch (_) { return true; } }
   function saveSourceFeaturesVisible(value) { try { localStorage.setItem(SOURCE_FEATURES_KEY, value ? 'true' : 'false'); } catch (_) {} }
+  function selectedKey(raceId) { return `garminRaceTracker.selectedRacers.${raceId}`; }
+  function loadSelectedRacers(raceId) { try { return new Set(JSON.parse(localStorage.getItem(selectedKey(raceId)) || '[]')); } catch (_) { return new Set(); } }
+  function saveSelectedRacers(raceId, ids) { try { localStorage.setItem(selectedKey(raceId), JSON.stringify(Array.from(ids))); } catch (_) {} }
+  function racerColor(id) { const palette = ['#e03131', '#1971c2', '#2f9e44', '#f08c00', '#9c36b5', '#0ca678', '#c92a2a', '#364fc7']; let hash = 0; for (const ch of String(id)) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0; return palette[Math.abs(hash) % palette.length]; }
   function loadSavedKml() { try { return localStorage.getItem(KML_KEY) || ''; } catch (_) { return ''; } }
   function saveImportedKml(text) { try { localStorage.setItem(KML_KEY, text); } catch (_) {} }
   function showSetupError(msg) { $('setup-error').textContent = msg; }
