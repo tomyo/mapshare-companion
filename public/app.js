@@ -230,6 +230,7 @@
       const xmlText = await fetchText(apiUrl('feed'));
       const racer = parseKml(xmlText);
       if (!racer) throw new Error('No usable location found in Garmin KML.');
+      racer.history = mergePositionHistory(state.racer, racer);
       state.racer = racer;
       updateRacerLayer();
       updatePanel();
@@ -262,7 +263,9 @@
     }));
     const positions = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
     positions.sort((a, b) => (b.utcMs || 0) - (a.utcMs || 0));
-    racer.position = positions[0] || null;
+    const latest = positions[0] || null;
+    if (latest) latest.history = mergePositionHistory(racer.position, latest);
+    racer.position = latest;
     racer.error = positions.length ? '' : (results.find((r) => r.status === 'rejected')?.reason?.message || 'No supported source position');
   }
 
@@ -305,7 +308,9 @@
     const trackVisible = state.visibleRaceTrackIds.has(racer.id);
     const hasTrack = !!(r.history && r.history.length > 1);
     const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(r.time || r.timeUtc || '—')}<br>Source: ${escapeHtml(r.sourceLabel || r.sourceName || 'Garmin')}`;
-    const trackButton = hasTrack ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>` : '';
+    const trackButton = hasTrack
+      ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>`
+      : '<button type="button" disabled title="Garmin has not published enough history points for this racer yet">No track yet</button>';
     return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button>${trackButton}</div>`;
   }
 
@@ -383,8 +388,36 @@
       return (Number(b.id) || 0) - (Number(a.id) || 0);
     });
     const latest = points[0] || null;
-    if (latest) latest.history = dedupeLatLon(points.slice().reverse());
+    if (latest) {
+      const trackPoints = extractKmlTrackPoints(doc);
+      latest.history = trackPoints.length > 1 ? trackPoints : dedupeLatLon(points.slice().reverse());
+    }
     return latest;
+  }
+
+  function extractKmlTrackPoints(doc) {
+    const points = [];
+    for (const line of Array.from(doc.getElementsByTagNameNS('*', 'LineString'))) {
+      points.push(...parseKmlCoordinateObjects(textOf(line, 'coordinates')));
+    }
+    return dedupeLatLon(points);
+  }
+
+  function parseKmlCoordinateObjects(text) {
+    return String(text || '').trim().split(/\s+/).map((chunk) => {
+      const [lon, lat, ele] = chunk.split(',').map(Number);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return { lat, lon, ele: Number.isFinite(ele) ? ele : null };
+    }).filter(Boolean);
+  }
+
+  function mergePositionHistory(previous, next) {
+    const history = [];
+    if (previous?.history?.length) history.push(...previous.history);
+    else if (previous) history.push(previous);
+    if (next?.history?.length) history.push(...next.history);
+    else if (next) history.push(next);
+    return dedupeLatLon(history);
   }
 
   function parsePlacemark(pm) {
