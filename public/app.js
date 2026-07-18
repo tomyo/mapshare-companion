@@ -40,6 +40,7 @@
     mapFeatures: { waypoints: [], routes: [], collections: null },
     sourceFeaturesVisible: true,
     sourceFeaturesDetected: false,
+    sourceFeatureSource: null,
     importedKml: null,
     kmlVisible: true,
     firstFitDone: false,
@@ -164,6 +165,7 @@
       const race = await loadRaceFromSheet(spec);
       state.race = race;
       state.racers = race.racers;
+      state.sourceFeatureSource = race.sourceFeatureSource;
       state.selectedRacerIds = loadSelectedRacers(race.id);
       $('map-name').textContent = race.name;
       updateFitButton();
@@ -178,8 +180,11 @@
   }
 
   async function refreshAll() {
-    if (state.raceMode) await refreshRaceRacers();
-    else await Promise.allSettled([refreshRacer(), loadMapFeatures()]);
+    if (state.raceMode) {
+      const tasks = [refreshRaceRacers()];
+      if (state.sourceFeatureSource) tasks.push(loadMapFeatures(state.sourceFeatureSource.name));
+      await Promise.allSettled(tasks);
+    } else await Promise.allSettled([refreshRacer(), loadMapFeatures()]);
   }
 
   function initMap() {
@@ -225,6 +230,8 @@
     setText('racer-status', 'refreshing…');
     await Promise.allSettled(state.racers.map(refreshRaceRacer));
     renderRaceRacers();
+    updateRaceSourceFeatureTrack();
+    updateSourceFeaturesMenu();
     updatePanel();
     updateConnector();
     maybeInitialFit();
@@ -282,12 +289,13 @@
     return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button></div>`;
   }
 
-  async function loadMapFeatures() {
+  async function loadMapFeatures(mapName = state.mapName) {
+    if (!mapName) return;
     try {
       const [waypointsRes, routesRes, collectionsRes] = await Promise.allSettled([
-        fetchJson(apiUrl('waypoints')),
-        fetchJson(apiUrl('routes')),
-        fetchJson(apiUrl('collections')),
+        fetchJson(apiUrlForName(mapName, 'waypoints')),
+        fetchJson(apiUrlForName(mapName, 'routes')),
+        fetchJson(apiUrlForName(mapName, 'collections')),
       ]);
       state.mapFeatures = {
         waypoints: waypointsRes.status === 'fulfilled' ? normalizeWaypoints(waypointsRes.value) : [],
@@ -713,14 +721,23 @@
     closeTrackMenu();
   }
 
+  function updateRaceSourceFeatureTrack() {
+    if (!state.raceMode || !state.sourceFeatureSource) return;
+    const racer = state.racers.find((item) => item.id === state.sourceFeatureSource.racerId);
+    if (racer?.position?.history) state.racerTrail.setLatLngs(racer.position.history.map((p) => [p.lat, p.lon]));
+  }
+
   function updateSourceFeaturesMenu() {
     const button = $('toggle-source-features');
-    const hasHistory = !!(state.racer?.history && state.racer.history.length > 1);
+    const featureRacer = state.raceMode && state.sourceFeatureSource ? state.racers.find((item) => item.id === state.sourceFeatureSource.racerId) : null;
+    const history = state.raceMode ? featureRacer?.position?.history : state.racer?.history;
+    const hasHistory = !!(history && history.length > 1);
     const w = state.mapFeatures.waypoints.length;
     const r = state.mapFeatures.routes.length;
     state.sourceFeaturesDetected = hasHistory || w > 0 || r > 0;
     button.classList.toggle('hidden', !state.sourceFeaturesDetected);
-    button.textContent = state.sourceFeaturesVisible ? 'Hide Garmin features' : 'Show Garmin features';
+    const label = state.raceMode ? 'source features' : 'Garmin features';
+    button.textContent = state.sourceFeaturesVisible ? `Hide ${label}` : `Show ${label}`;
     button.title = `${w} waypoints, ${r} routes${hasHistory ? ', history track' : ''}`;
   }
 
@@ -771,7 +788,8 @@
       const b = bearingDeg(state.me.lat, state.me.lon, target.lat, target.lon);
       setText('range', `${formatDistance(d)} · ${Math.round(b)}°`);
     } else setText('range', state.me ? 'no racers' : 'waiting GPS');
-    setText('info', `Race: ${state.race?.name || '—'} · ${state.racers.length} racers · ${supportedSourceCount()} Garmin sources`);
+    const featureSource = state.sourceFeatureSource ? ` · map features from ${state.sourceFeatureSource.racerName}` : '';
+    setText('info', `Race: ${state.race?.name || '—'} · ${state.racers.length} racers · ${supportedSourceCount()} Garmin sources${featureSource}`);
     updateFitButton();
   }
 
@@ -846,13 +864,23 @@
     const rows = await getSheetData(spec.id, spec.gid);
     const racers = rows.map(rowToRacer).filter(Boolean);
     if (!racers.length) throw new Error('No racers with Garmin sources found in sheet.');
-    return { id: `sheet:${spec.id}:${spec.gid}`, name: spec.name || 'Race sheet', racers };
+    return { id: `sheet:${spec.id}:${spec.gid}`, name: spec.name || 'Race sheet', racers, sourceFeatureSource: findSourceFeatureSource(racers) };
+  }
+
+  function findSourceFeatureSource(racers) {
+    for (const racer of racers) {
+      if (!racer.useMapFeatures) continue;
+      const source = racer.sources.find((item) => item.type === 'garmin-mapshare');
+      if (source) return Object.assign({ racerId: racer.id, racerName: racer.name }, source);
+    }
+    return null;
   }
 
   function rowToRacer(row, index) {
     const name = pickFirst(row, ['RacerName', 'racer_name', 'Racer', 'PilotName', 'Pilot', 'Name', 'name']) || `Racer ${index + 1}`;
     const id = slugify(name) || `racer-${index + 1}`;
-    const reserved = new Set(['racername', 'racer_name', 'racer', 'pilotname', 'pilot', 'name', 'notes', 'note']);
+    const useMapFeatures = rowFlag(row, ['UseMapFeatures', 'UseSourceFeatures', 'MapFeatures', 'CourseSource', 'UseCourse']);
+    const reserved = new Set(['racername', 'racer', 'pilotname', 'pilot', 'name', 'notes', 'note', 'usemapfeatures', 'usesourcefeatures', 'mapfeatures', 'coursesource', 'usecourse']);
     const sources = [];
     const unsupportedSources = [];
     for (const [label, value] of Object.entries(row)) {
@@ -862,7 +890,7 @@
       else unsupportedSources.push({ type: 'unknown', label, raw: String(value).trim() });
     }
     if (!sources.length && !unsupportedSources.length) return null;
-    return { id, name: String(name).trim(), sources, unsupportedSources, position: null, error: '' };
+    return { id, name: String(name).trim(), sources, unsupportedSources, useMapFeatures, position: null, error: '' };
   }
 
   function parseGarminSource(value, label) {
@@ -908,6 +936,12 @@
     const wanted = new Set(names.map(normalizeHeader));
     for (const [key, value] of Object.entries(row)) if (wanted.has(normalizeHeader(key)) && value) return value;
     return '';
+  }
+  function rowFlag(row, names) {
+    const value = pickFirst(row, names);
+    if (value === true) return true;
+    if (typeof value === 'number') return value !== 0;
+    return /^(true|yes|y|1|x)$/i.test(String(value || '').trim());
   }
   function normalizeHeader(value) { return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, ''); }
   function slugify(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80); }

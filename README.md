@@ -59,10 +59,10 @@ https://mapshare-companion.vercel.app/?sheet=<google-sheet-id>&gid=0
 The Google Sheet must be public/readable by link. Race roster columns:
 
 ```text
-Name | GarminLink | GsmLink | FlymasterLink | Notes
+Name | GarminLink | GsmLink | FlymasterLink | UseMapFeatures | Notes
 ```
 
-For now, `GarminLink` / `Garmin` / `MapShare` columns are supported. Other source columns are preserved conceptually but ignored until providers are added. If a racer has multiple Garmin source columns, the app fetches all of them and uses the newest valid Garmin position.
+For now, `GarminLink` / `Garmin` / `MapShare` columns are supported. Other source columns are preserved conceptually but ignored until providers are added. If a racer has multiple Garmin source columns, the app fetches all of them and uses the newest valid Garmin position. Set `UseMapFeatures` to `true` on one racer to use that racer's Garmin routes/waypoints/history as the race map features.
 
 Generic usage pattern:
 
