@@ -390,7 +390,38 @@
     await connectFlymasterGroup(groupId).catch((err) => {
       if (!source.flymasterPosition) throw err;
     });
+    if (!source.flymasterPosition) return null;
+    if (!source.flymasterTraceLoaded && !source.flymasterTraceInFlight && source.flymasterPosition.flymasterStamp) {
+      source.flymasterTraceInFlight = fetchFlymasterTrace(groupId, source.id, source.flymasterPosition.flymasterStamp)
+        .then((history) => {
+          if (history.length > 1) {
+            const position = clonePosition(source.flymasterPosition);
+            position.history = mergePositionHistory({ history }, position).slice(-3000);
+            source.flymasterPosition = clonePosition(position);
+          }
+          source.flymasterTraceLoaded = true;
+        })
+        .catch((err) => {
+          console.warn(`Flymaster trace failed for ${source.id}`, err);
+        })
+        .finally(() => { source.flymasterTraceInFlight = null; });
+      await source.flymasterTraceInFlight;
+    }
     return source.flymasterPosition ? clonePosition(source.flymasterPosition) : null;
+  }
+
+  async function fetchFlymasterTrace(groupId, pilotId, stamp) {
+    const data = await fetchJson(flymasterApiUrl('trace', { grp: groupId, p: pilotId, d: stamp }));
+    return parseFlymasterTrace(data);
+  }
+
+  function parseFlymasterTrace(data) {
+    const arr = Array.isArray(data?.trace) ? data.trace : [];
+    return arr.map((point) => {
+      const lat = Number(Array.isArray(point) ? point[0] : point?.lat);
+      const lon = Number(Array.isArray(point) ? point[1] : point?.lon);
+      return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+    }).filter(Boolean);
   }
 
   async function fetchSpotPosition(source) {
@@ -421,10 +452,17 @@
     return Object.assign(clonePosition(position), {
       racerId: racer.id,
       name: racer.name,
-      sourceLabel: source.label,
+      sourceLabel: sourceDisplayLabel(source),
       sourceName: source.name || source.id || '',
       sourceType: source.type,
     });
+  }
+
+  function sourceDisplayLabel(source) {
+    if (source?.type === 'flymaster') return 'Flymaster';
+    if (source?.type === 'spot') return 'SPOT';
+    if (source?.type === 'garmin-mapshare') return 'Garmin';
+    return source?.label || sourceTypeLabel(source?.type);
   }
 
   function clonePosition(position) {
@@ -695,8 +733,10 @@
 
     const matches = state.flymasterSourceIndex.get(String(sn)) || [];
     for (const { racer, source } of matches) {
-      const normalized = decorateSourcePosition(Object.assign({}, position, { name: racer.name }), racer, source);
-      source.flymasterPosition = clonePosition(position);
+      const sourcePosition = clonePosition(Object.assign({}, position, { name: racer.name }));
+      sourcePosition.history = mergePositionHistory(source.flymasterPosition || source.latestPosition, sourcePosition).slice(-3000);
+      const normalized = decorateSourcePosition(sourcePosition, racer, source);
+      source.flymasterPosition = clonePosition(sourcePosition);
       source.latestPosition = clonePosition(normalized);
       updateRacerFromSourceCache(racer);
     }
@@ -817,6 +857,7 @@
       sourceLabel: 'Flymaster',
       sourceName: `grp ${data.groupId}`,
       sourceType: 'flymaster',
+      flymasterStamp: data.stamp,
     };
   }
 
