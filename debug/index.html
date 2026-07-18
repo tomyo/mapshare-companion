@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flymaster My Location debug</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css" />
+  <style>
+    html, body, #map-canvas { height: 100%; margin: 0; }
+    .debug-help {
+      position: fixed; right: 12px; bottom: 12px; z-index: 1000;
+      background: rgba(255,255,255,.94); padding: 10px; border-radius: 8px;
+      font: 13px system-ui, sans-serif; box-shadow: 0 2px 12px rgba(0,0,0,.25);
+      max-width: 320px;
+    }
+    .debug-help code { background: #eee; padding: 1px 3px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="map-canvas"></div>
+  <div class="debug-help">
+    <b>Debug harness</b><br>
+    This page creates a Leaflet map in the same global variable name Flymaster uses: <code>window.map</code>.<br>
+    Mock GPS is enabled, so no browser GPS prompt is needed.
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"></script>
+  <script>
+    window.map = L.map('map-canvas', { zoomControl: true }).setView([41.1579, -8.6291], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(window.map);
+
+    L.marker([41.1579, -8.6291]).addTo(window.map).bindPopup('Fake pilot / reference point');
+    window.FM_MY_LOCATION_CONFIG = { mock: true, autoStart: true, follow: false };
+  </script>
+  <script src="../src/flymaster-my-location.js"></script>
+</body>
+</html>

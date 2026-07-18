@@ -1,0 +1,14 @@
+{
+  "name": "mapshare-companion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A support-crew companion map for Garmin MapShare races.",
+  "scripts": {
+    "build": "node tools/build.js",
+    "check": "node --check src/flymaster-my-location.js && node --check src/bookmarklet-lite.js && node --check src/garmin-mapshare-overlay.js && node --check public/app.js && node --check api/garmin.js && node --check tools/build.js",
+    "serve": "python3 -m http.server 8000",
+    "vercel:dev": "vercel dev",
+    "deploy": "vercel --prod"
+  }
+}

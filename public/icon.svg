@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MapShare Companion icon">
+  <rect width="512" height="512" rx="112" fill="#0b1020"/>
+  <path d="M96 128c44-32 88-32 132 0 38 27 76 31 114 12 24-12 49-29 74-12v256c-44-32-88-32-132 0-38 27-76 31-114 12-24-12-49-29-74-12V128Z" fill="#1e40af"/>
+  <path d="M96 128c44-32 88-32 132 0v256c-44-32-88-32-132 0V128Z" fill="#2563eb"/>
+  <path d="M228 128c38 27 76 31 114 12v256c-38 19-76 15-114-12V128Z" fill="#0f766e"/>
+  <path d="M342 140c24-12 49-29 74-12v256c-25-17-50 0-74 12V140Z" fill="#16a34a"/>
+  <path d="M132 302c70-70 152-75 248-16" fill="none" stroke="#f8fafc" stroke-width="22" stroke-linecap="round" stroke-dasharray="36 34" opacity=".9"/>
+  <path d="M256 94c-61 0-110 49-110 110 0 82 110 214 110 214s110-132 110-214c0-61-49-110-110-110Z" fill="#e11d48" stroke="#fff" stroke-width="18"/>
+  <circle cx="256" cy="204" r="42" fill="#fff"/>
+  <circle cx="256" cy="204" r="20" fill="#e11d48"/>
+</svg>

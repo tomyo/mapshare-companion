@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MapShare Companion</title>
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="MapShare" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main id="setup" class="setup">
+    <section class="setup-card">
+      <div class="page-title-row">
+        <h1>MapShare Companion</h1>
+        <a class="donate-link" href="https://ko-fi.com/mapsharecompanion" target="_blank" rel="noopener">Donate</a>
+      </div>
+      <p>A support-crew map for Garmin MapShare races. Paste a public Garmin MapShare username or URL.</p>
+      <form id="setup-form">
+        <input id="map-input" autocomplete="off" inputmode="url" placeholder="nhayes or https://share.garmin.com/nhayes" />
+        <button type="submit">Start tracker</button>
+      </form>
+      <p class="hint">Works with public links like <code>https://share.garmin.com/&lt;name&gt;</code>.</p>
+      <p id="setup-error" class="setup-error" role="alert"></p>
+    </section>
+  </main>
+
+  <main id="tracker" class="tracker hidden">
+    <header class="top">
+      <div>
+        <div class="page-title-row compact">
+          <div class="title">MapShare Companion</div>
+          <a class="donate-link" href="https://ko-fi.com/mapsharecompanion" target="_blank" rel="noopener">Donate</a>
+        </div>
+        <div class="subtitle">Garmin MapShare: <b id="map-name">—</b></div>
+      </div>
+      <div class="menu-wrap">
+        <button id="track-menu-toggle" class="menu-toggle" type="button" title="Tracker options" aria-haspopup="menu" aria-expanded="false">⋮</button>
+        <div id="track-menu" class="track-menu hidden" role="menu" aria-label="Tracker options">
+          <button id="change-map" type="button" role="menuitem">Change racer</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="stats">
+      <div><span>Racer</span><b id="racer-status">loading…</b></div>
+      <div><span>Speed</span><b id="speed">—</b></div>
+      <div><span>Elev</span><b id="elevation">—</b></div>
+      <div><span>Me → Racer</span><b id="range">GPS…</b></div>
+    </section>
+
+    <nav class="actions">
+      <button id="fit-both" type="button">Fit both</button>
+      <button id="center-racer" type="button">Racer</button>
+      <button id="center-me" type="button">Me</button>
+      <button id="fit-course" type="button">Course</button>
+      <button id="refresh" type="button">Refresh</button>
+      <button id="toggle-features" type="button">Features</button>
+    </nav>
+
+    <div id="info" class="info">Loading…</div>
+    <div id="map"></div>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

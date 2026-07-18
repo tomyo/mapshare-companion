@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MapShare Companion debug</title>
+  <style>
+    body { margin: 0; font: 16px system-ui, sans-serif; padding: 24px; }
+    code { background: #eee; padding: 2px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Fake Garmin MapShare page</h1>
+  <p>This debug harness simulates <code>share.garmin.com/nhayes</code>.</p>
+  <p>The overlay should open automatically, read <code>/fixtures/nhayes.kml</code>, and use a mock “Me” location.</p>
+
+  <script>
+    window.GARMIN_TRACKER_CONFIG = {
+      mapName: 'nhayes',
+      feedUrl: '/fixtures/nhayes.kml',
+      waypointsUrl: '/fixtures/nhayes-waypoints.json',
+      routesUrl: '/fixtures/nhayes-routes.json',
+      collectionsUrl: '/fixtures/nhayes-collections.json',
+      mockMe: true,
+      refreshMs: 15000
+    };
+  </script>
+  <script src="../src/garmin-mapshare-overlay.js"></script>
+</body>
+</html>
