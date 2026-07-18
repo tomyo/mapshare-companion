@@ -11,7 +11,7 @@ The primary deliverable is a standalone Vercel webapp. It asks for a Garmin user
 - OpenStreetMap map with both markers and a connecting line
 - Garmin MapShare waypoints and routes from `/<mapshare-name>/Waypoints` and `/<mapshare-name>/routes/`
 - any track/history points present in the public KML feed
-- buttons for Fit both, Racer, Me, Course, Refresh, and Features
+- buttons for Fit both, Racer, Me, Refresh, and a simple Show/Hide features toggle
 - auto-refresh of the Garmin feed and map features every 60 seconds
 - contextual map popups: tap the racer, a waypoint, your location, or any map point to open that point in Google Maps or OSM
 - distance measuring: choose **Measure from here** in any location popup, then tap map points to update a straight-line distance until you close the measuring popup or click outside the map

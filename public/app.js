@@ -78,7 +78,6 @@
   $('fit-both').addEventListener('click', fitBoth);
   $('center-racer').addEventListener('click', centerRacer);
   $('center-me').addEventListener('click', centerMe);
-  $('fit-course').addEventListener('click', fitCourse);
   $('refresh').addEventListener('click', () => refreshAll());
   $('toggle-features').addEventListener('click', toggleMapFeatures);
 
@@ -454,22 +453,15 @@
   function updateFeatureButton() {
     const w = state.mapFeatures.waypoints.length;
     const r = state.mapFeatures.routes.length;
-    $('toggle-features').textContent = state.featuresVisible ? `Features ${w}/${r}` : 'Features off';
+    const button = $('toggle-features');
+    button.textContent = state.featuresVisible ? 'Hide features' : 'Show features';
+    button.title = `${w} waypoints, ${r} routes`;
   }
 
   function fitBoth() {
     if (!state.racer) return;
     if (state.me) state.map.fitBounds([[state.me.lat, state.me.lon], [state.racer.lat, state.racer.lon]], { padding: [40, 40], maxZoom: 16 });
     else centerRacer();
-  }
-
-  function fitCourse() {
-    const bounds = [];
-    state.mapFeatures.routes.forEach((r) => bounds.push(...r.points));
-    state.mapFeatures.waypoints.forEach((w) => bounds.push([w.lat, w.lon]));
-    if (state.racer) bounds.push([state.racer.lat, state.racer.lon]);
-    if (state.me) bounds.push([state.me.lat, state.me.lon]);
-    if (bounds.length) state.map.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
   }
 
   function centerRacer() { if (state.racer) state.map.setView([state.racer.lat, state.racer.lon], Math.max(state.map.getZoom(), 15)); }
