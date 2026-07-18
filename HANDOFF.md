@@ -46,7 +46,7 @@ https://share.garmin.com/nhayes
   - prominent speed/elevation plus GPS fix/last-update metadata; course remains in racer popup/info where available
   - Street/topographic map with racer marker, observer marker, accuracy circle, and connector line
   - waypoints, routes, and KML history/track points when available
-  - controls: Fit both, Racer, Me, Refresh, simple Show/Hide features toggle, Street/Topo base map toggle
+  - quick header refresh button plus controls: Fit both, Racer, Me, simple Show/Hide features toggle, Street/Topo base map toggle
   - contextual map popups: tap racer, observer, waypoint, or any map point to open that point in Google Maps or OSM
   - popup action `Measure from here`: enters measuring mode, then map taps update a straight-line distance line/label until the measurement popup is closed or the user clicks outside the map
   - the dotted observer→racer connector includes a subtle permanent distance label in km

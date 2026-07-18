@@ -40,10 +40,13 @@
         </div>
         <div class="subtitle">Garmin MapShare: <b id="map-name">—</b></div>
       </div>
-      <div class="menu-wrap">
-        <button id="track-menu-toggle" class="menu-toggle" type="button" title="Tracker options" aria-haspopup="menu" aria-expanded="false">⋮</button>
-        <div id="track-menu" class="track-menu hidden" role="menu" aria-label="Tracker options">
-          <button id="change-map" type="button" role="menuitem">Change racer</button>
+      <div class="header-actions">
+        <button id="refresh" class="icon-button" type="button" title="Refresh Garmin data" aria-label="Refresh Garmin data">⟳</button>
+        <div class="menu-wrap">
+          <button id="track-menu-toggle" class="icon-button" type="button" title="Tracker options" aria-label="Tracker options" aria-haspopup="menu" aria-expanded="false">⋮</button>
+          <div id="track-menu" class="track-menu hidden" role="menu" aria-label="Tracker options">
+            <button id="change-map" type="button" role="menuitem">Change racer</button>
+          </div>
         </div>
       </div>
     </header>
@@ -59,7 +62,6 @@
       <button id="fit-both" type="button">Fit both</button>
       <button id="center-racer" type="button">Racer</button>
       <button id="center-me" type="button">Me</button>
-      <button id="refresh" type="button">Refresh</button>
       <button id="toggle-features" type="button">Hide features</button>
       <button id="toggle-basemap" type="button" title="Toggle map type">🗺️ Topo</button>
     </nav>
