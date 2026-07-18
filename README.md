@@ -17,7 +17,8 @@ The primary deliverable is a standalone Vercel webapp. It asks for a Garmin user
 - distance measuring: choose **Measure from here** in any location popup, then tap map points to update a straight-line distance until you close the measuring popup or click outside the map
 - subtle distance label on the dotted line between your location and the racer
 - remembered base map preference: Street uses OpenStreetMap, Topo uses OpenTopoMap elevation contours
-- KML import from the top-right menu, persisted locally and toggleable from the action row
+- KML import from the top-right menu or supported Android share/open flows, persisted locally and toggleable from the action row
+- Garmin/source features are separate from imported KML; when detected, they can be shown/hidden from the top-right menu
 
 ## Why this works
 
@@ -67,7 +68,7 @@ Submitting the root form saves the MapShare name in `localStorage` and redirects
 
 The app includes a web app manifest, install icons, and a service worker, so Chrome mobile can install it as a standalone PWA. The manifest launches `/?launch=1`; if a racer was previously selected, the app redirects back to `/<mapshare-name>` using the saved `localStorage` value.
 
-It also registers as a Web Share Target: share a Garmin MapShare URL such as `https://share.garmin.com/nhayes` to **MapShare Companion**, and the app will extract the racer name and redirect to `/nhayes`.
+It also registers as a Web Share Target: share a Garmin MapShare URL such as `https://share.garmin.com/nhayes` to **MapShare Companion**, and the app will extract the racer name and redirect to `/nhayes`. KML files can also be shared/opened into the installed app on supported browsers; the app imports and persists them as the local KML layer.
 
 Browsers do not let unrelated PWAs directly hijack normal `https://share.garmin.com/...` link clicks; sharing the Garmin link to the installed app is the supported path.
 

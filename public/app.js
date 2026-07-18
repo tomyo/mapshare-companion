@@ -4,6 +4,7 @@
   const STORE_KEY = 'garminRaceTracker.mapName';
   const BASE_MAP_KEY = 'garminRaceTracker.baseMap';
   const KML_KEY = 'garminRaceTracker.importedKml';
+  const SOURCE_FEATURES_KEY = 'garminRaceTracker.sourceFeaturesVisible';
   const REFRESH_MS = 60000;
   const STALE_AFTER_MIN = 15;
 
@@ -32,6 +33,8 @@
     racer: null,
     me: null,
     mapFeatures: { waypoints: [], routes: [], collections: null },
+    sourceFeaturesVisible: true,
+    sourceFeaturesDetected: false,
     importedKml: null,
     kmlVisible: true,
     firstFitDone: false,
@@ -91,9 +94,15 @@
   $('refresh').addEventListener('click', () => refreshAll());
   $('toggle-basemap').addEventListener('click', toggleBaseMap);
   $('toggle-kml').addEventListener('click', toggleKmlLayer);
+  $('toggle-source-features').addEventListener('click', toggleSourceFeatures);
   $('kml-file').addEventListener('change', importKmlFile);
 
   const launchParams = new URL(location.href).searchParams;
+  if (launchParams.has('share-target')) {
+    handleShareTargetLaunch();
+    return;
+  }
+
   const sharedMap = parseSharedMap(launchParams);
   if (sharedMap) {
     saveMapName(sharedMap);
@@ -134,7 +143,9 @@
     state.map = L.map('map', { zoomControl: true }).setView([0, 0], 2);
     setBaseMap(loadBaseMapType());
     state.layers = L.layerGroup().addTo(state.map);
-    state.featureLayers = L.layerGroup().addTo(state.map);
+    state.sourceFeaturesVisible = loadSourceFeaturesVisible();
+    state.featureLayers = L.layerGroup();
+    if (state.sourceFeaturesVisible) state.featureLayers.addTo(state.map);
     state.routeLayer = L.layerGroup().addTo(state.featureLayers);
     state.trackLayer = L.layerGroup().addTo(state.featureLayers);
     state.waypointLayer = L.layerGroup().addTo(state.featureLayers);
@@ -179,6 +190,7 @@
         collections: collectionsRes.status === 'fulfilled' ? collectionsRes.value : null,
       };
       renderMapFeatures();
+      updateSourceFeaturesMenu();
     } catch (err) {
       console.warn('Map feature load failed', err);
     }
@@ -306,6 +318,7 @@
     else { state.racerMarker.setLatLng(ll); state.racerMarker.setIcon(icon); }
     state.racerMarker.bindPopup(locationPopupHtml(r.name, r.lat, r.lon, `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Course: ${escapeHtml(r.courseText)}<br>Updated: ${escapeHtml(r.time || r.timeUtc || '—')}`));
     if (r.history) state.racerTrail.setLatLngs(r.history.map((p) => [p.lat, p.lon]));
+    updateSourceFeaturesMenu();
     updateConnector();
   }
 
@@ -458,19 +471,40 @@
     event.target.value = '';
     if (!file) return;
     try {
-      const text = await file.text();
-      const imported = parseImportedKml(text, file.name || 'Imported KML');
-      if (!imported.points.length && !imported.lines.length) throw new Error('No points or lines found in KML.');
-      state.importedKml = imported;
-      state.kmlVisible = true;
-      saveImportedKml(text);
-      renderImportedKml(true);
-      setText('info', `Imported KML: ${imported.points.length} points, ${imported.lines.length} lines.`);
+      await importKmlText(await file.text(), file.name || 'Imported KML', true);
     } catch (err) {
       console.error(err);
       setText('info', `KML import failed: ${err.message || err}`);
       alert(`KML import failed: ${err.message || err}`);
     }
+  }
+
+  async function handleShareTargetLaunch() {
+    try {
+      const res = await fetch('/share-target-data', { cache: 'no-store' });
+      const data = res.ok ? await res.json() : null;
+      if (data?.kmlText) await importKmlText(data.kmlText, data.kmlName || 'Shared KML', false);
+      const sharedMap = parseSharedMapCandidates([data?.url, data?.text, data?.title].filter(Boolean));
+      if (sharedMap) {
+        saveMapName(sharedMap);
+        location.replace(`/${encodeURIComponent(sharedMap)}`);
+        return;
+      }
+    } catch (err) {
+      console.warn('Shared launch failed', err);
+    }
+    const savedMap = loadSavedMapName();
+    location.replace(savedMap ? `/${encodeURIComponent(savedMap)}` : '/');
+  }
+
+  async function importKmlText(text, name, fitAfterRender) {
+    const imported = parseImportedKml(text, name || 'Imported KML');
+    if (!imported.points.length && !imported.lines.length) throw new Error('No points or lines found in KML.');
+    state.importedKml = imported;
+    state.kmlVisible = true;
+    saveImportedKml(text);
+    renderImportedKml(fitAfterRender && !!state.map);
+    setText('info', `Imported KML: ${imported.points.length} points, ${imported.lines.length} lines.`);
   }
 
   function loadImportedKml() {
@@ -549,14 +583,34 @@
   function updateKmlButton() {
     const button = $('toggle-kml');
     if (!state.importedKml) {
-      button.textContent = 'No KML';
-      button.title = 'Import a KML from the top-right menu';
+      button.classList.add('hidden');
       button.disabled = true;
       return;
     }
+    button.classList.remove('hidden');
     button.disabled = false;
     button.textContent = state.kmlVisible ? 'Hide KML' : 'Show KML';
     button.title = `${state.importedKml.points.length} points, ${state.importedKml.lines.length} lines`;
+  }
+
+  function toggleSourceFeatures() {
+    state.sourceFeaturesVisible = !state.sourceFeaturesVisible;
+    saveSourceFeaturesVisible(state.sourceFeaturesVisible);
+    if (state.sourceFeaturesVisible) state.featureLayers.addTo(state.map);
+    else state.map.removeLayer(state.featureLayers);
+    updateSourceFeaturesMenu();
+    closeTrackMenu();
+  }
+
+  function updateSourceFeaturesMenu() {
+    const button = $('toggle-source-features');
+    const hasHistory = !!(state.racer?.history && state.racer.history.length > 1);
+    const w = state.mapFeatures.waypoints.length;
+    const r = state.mapFeatures.routes.length;
+    state.sourceFeaturesDetected = hasHistory || w > 0 || r > 0;
+    button.classList.toggle('hidden', !state.sourceFeaturesDetected);
+    button.textContent = state.sourceFeaturesVisible ? 'Hide Garmin features' : 'Show Garmin features';
+    button.title = `${w} waypoints, ${r} routes${hasHistory ? ', history track' : ''}`;
   }
 
   function toggleBaseMap() {
@@ -609,7 +663,10 @@
   }
 
   function parseSharedMap(params) {
-    const candidates = [params.get('url'), params.get('text'), params.get('title')].filter(Boolean);
+    return parseSharedMapCandidates([params.get('url'), params.get('text'), params.get('title')].filter(Boolean));
+  }
+
+  function parseSharedMapCandidates(candidates) {
     for (const candidate of candidates) {
       const garminUrl = String(candidate).match(/(?:https?:\/\/)?share\.garmin\.com\/[^\s<>"']+/i)?.[0];
       const parsed = parseMapName(garminUrl ? (garminUrl.includes('://') ? garminUrl : `https://${garminUrl}`) : candidate);
@@ -639,6 +696,8 @@
   function clearSavedMapName() { try { localStorage.removeItem(STORE_KEY); } catch (_) {} }
   function loadBaseMapType() { try { return localStorage.getItem(BASE_MAP_KEY) === 'topo' ? 'topo' : 'street'; } catch (_) { return 'street'; } }
   function saveBaseMapType(type) { try { localStorage.setItem(BASE_MAP_KEY, type); } catch (_) {} }
+  function loadSourceFeaturesVisible() { try { return localStorage.getItem(SOURCE_FEATURES_KEY) !== 'false'; } catch (_) { return true; } }
+  function saveSourceFeaturesVisible(value) { try { localStorage.setItem(SOURCE_FEATURES_KEY, value ? 'true' : 'false'); } catch (_) {} }
   function loadSavedKml() { try { return localStorage.getItem(KML_KEY) || ''; } catch (_) { return ''; } }
   function saveImportedKml(text) { try { localStorage.setItem(KML_KEY, text); } catch (_) {} }
   function showSetupError(msg) { $('setup-error').textContent = msg; }
@@ -655,6 +714,19 @@
   function distanceM(lat1, lon1, lat2, lon2) { const R = 6371000, p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180, dp = (lat2 - lat1) * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180; const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); }
   function bearingDeg(lat1, lon1, lat2, lon2) { const p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180; const y = Math.sin(dl) * Math.cos(p2); const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl); return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360; }
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
+
+  if ('launchQueue' in window) {
+    window.launchQueue.setConsumer(async (launchParams) => {
+      for (const handle of launchParams.files || []) {
+        try {
+          const file = await handle.getFile();
+          if (/\.kml$/i.test(file.name) || /kml|xml/i.test(file.type)) await importKmlText(await file.text(), file.name || 'Opened KML', true);
+        } catch (err) {
+          console.warn('File launch failed', err);
+        }
+      }
+    });
+  }
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

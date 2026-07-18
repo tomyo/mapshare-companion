@@ -46,6 +46,7 @@
           <button id="track-menu-toggle" class="icon-button" type="button" title="Tracker options" aria-label="Tracker options" aria-haspopup="menu" aria-expanded="false">⋮</button>
           <div id="track-menu" class="track-menu hidden" role="menu" aria-label="Tracker options">
             <button id="import-kml" type="button" role="menuitem">Import KML</button>
+            <button id="toggle-source-features" class="hidden" type="button" role="menuitem">Hide Garmin features</button>
             <button id="change-map" type="button" role="menuitem">Change racer</button>
           </div>
         </div>
@@ -64,7 +65,7 @@
       <button id="center-racer" type="button">Racer</button>
       <button id="center-me" type="button">Me</button>
       <button id="toggle-basemap" type="button" title="Toggle map type">🗺️ Topo</button>
-      <button id="toggle-kml" type="button" disabled>No KML</button>
+      <button id="toggle-kml" class="hidden" type="button">Hide KML</button>
       <input id="kml-file" class="hidden" type="file" accept=".kml,application/vnd.google-earth.kml+xml,application/xml,text/xml" />
     </nav>
 

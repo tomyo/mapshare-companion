@@ -1,4 +1,5 @@
-const CACHE_NAME = 'mapshare-companion-v1';
+const CACHE_NAME = 'mapshare-companion-v2';
+const SHARE_DATA_URL = '/share-target-data';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -27,6 +28,17 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
+
+  if (event.request.method === 'POST' && url.pathname === '/share-target') {
+    event.respondWith(handleShareTarget(event.request));
+    return;
+  }
+
+  if (event.request.method === 'GET' && url.pathname === SHARE_DATA_URL) {
+    event.respondWith(popSharedData());
+    return;
+  }
+
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
@@ -41,3 +53,38 @@ self.addEventListener('fetch', (event) => {
       .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/index.html')))
   );
 });
+
+async function handleShareTarget(request) {
+  const form = await request.formData();
+  const data = {
+    title: String(form.get('title') || ''),
+    text: String(form.get('text') || ''),
+    url: String(form.get('url') || ''),
+    kmlName: '',
+    kmlText: '',
+  };
+
+  const files = form.getAll('kml');
+  const kmlFile = files.find((file) => file && typeof file.text === 'function');
+  if (kmlFile) {
+    data.kmlName = kmlFile.name || 'Shared KML';
+    data.kmlText = await kmlFile.text();
+  }
+
+  const cache = await caches.open(CACHE_NAME);
+  await cache.put(new URL(SHARE_DATA_URL, self.location.origin).href, new Response(JSON.stringify(data), {
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  }));
+  return Response.redirect(new URL('/?share-target=1', self.location.origin).href, 303);
+}
+
+async function popSharedData() {
+  const cache = await caches.open(CACHE_NAME);
+  const shareDataUrl = new URL(SHARE_DATA_URL, self.location.origin).href;
+  const cached = await cache.match(shareDataUrl);
+  await cache.delete(shareDataUrl);
+  return cached || new Response('{}', {
+    status: 404,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  });
+}

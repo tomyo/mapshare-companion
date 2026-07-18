@@ -29,12 +29,13 @@ https://share.garmin.com/nhayes
 - If there is no saved racer, root `/` shows the setup form.
 - Submitting the root form stores the normalized name in `localStorage` and redirects to `/<mapshare-name>` so the page can be bookmarked/installed standalone.
 - The app is installable as a PWA via `public/manifest.webmanifest`, icons in `public/icons/`, and `public/sw.js`. Manifest `start_url` is `/?launch=1`; if `localStorage` has a saved racer, `public/app.js` redirects to `/<mapshare-name>` on launch.
-- The manifest includes a Web Share Target. Sharing a Garmin URL to the installed PWA passes `?url=...` or `?text=...`; `public/app.js` extracts the MapShare name and redirects to `/<mapshare-name>`.
+- The manifest includes a POST Web Share Target at `/share-target`. Sharing a Garmin URL to the installed PWA passes `url`/`text`; sharing a KML file passes a `kml` file. `public/sw.js` stores shared data in Cache API and redirects to `/?share-target=1`; `public/app.js` imports KML and/or extracts the MapShare name.
 - Directly hijacking normal `https://share.garmin.com/...` link clicks is not possible without Garmin/origin association; use Web Share Target instead.
 - External map links are contextual popup actions, not fixed toolbar buttons. Google Maps links use point search (`/maps/search/?api=1&query=lat,lon`), not directions/navigation.
 - Base map preference is stored in `localStorage` under `garminRaceTracker.baseMap`; valid values are `street` and `topo`. Topo uses OpenTopoMap public tiles.
-- Imported KML is stored in `localStorage` under `garminRaceTracker.importedKml`, rendered as an independent map layer, and toggled from the action row.
-- The top-right `⋮` tracker menu currently has `Import KML` and `Change racer`; Change racer clears the saved `localStorage` racer and navigates back to `/`.
+- Imported KML is stored in `localStorage` under `garminRaceTracker.importedKml`, rendered as an independent map layer, and toggled from the action row. KML can be imported from the menu, Android/browser share target, and supported File Handling API launches.
+- Garmin/source features are separate from imported KML. If source features are detected, the top-right menu shows `Hide/Show Garmin features`; its visibility preference is stored under `garminRaceTracker.sourceFeaturesVisible`.
+- The top-right `⋮` tracker menu currently has `Import KML`, conditional `Hide/Show Garmin features`, and `Change racer`; Change racer clears the saved `localStorage` racer and navigates back to `/`.
 - Explicit targets auto-start:
   - `/<mapshare-name>`
   - `?map=<mapshare-name>`
