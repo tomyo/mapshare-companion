@@ -47,7 +47,9 @@
     racer: null,
     me: null,
     raceMode: false,
-    mapFeatures: { waypoints: [], routes: [], collections: null },
+    mapFeatures: { waypoints: [], routes: [], collections: null, source: '' },
+    flymasterTaskId: '',
+    flymasterTaskLoading: null,
     sourceFeaturesVisible: true,
     sourceFeaturesDetected: false,
     sourceFeatureSource: null,
@@ -255,9 +257,7 @@
 
   async function refreshAll() {
     if (state.raceMode) {
-      const tasks = [refreshRaceRacers()];
-      if (state.sourceFeatureSource) tasks.push(loadMapFeatures(state.sourceFeatureSource.name));
-      await Promise.allSettled(tasks);
+      await Promise.allSettled([refreshRaceRacers()]);
     } else {
       const tasks = [refreshRacer()];
       if (state.soloSource?.type === 'garmin-mapshare') tasks.push(loadMapFeatures());
@@ -653,6 +653,7 @@
   }
 
   function handleFlymasterMessage(fm, data) {
+    if (data.tk) maybeLoadFlymasterTask(data.tk, fm.groupId);
     if (data.type === 'pilot_list' && Array.isArray(data.pilots)) {
       for (const pilot of data.pilots) {
         const sn = String(pilot.sn || '').trim();
@@ -712,6 +713,24 @@
       }
     }
     state.flymasterSourceIndex = index;
+  }
+
+  function maybeLoadFlymasterTask(taskId, groupId) {
+    const id = String(taskId || '').trim();
+    if (!/^\d{1,12}$/.test(id) || state.flymasterTaskId === id || state.flymasterTaskLoading === id) return;
+    state.flymasterTaskLoading = id;
+    fetchJson(flymasterApiUrl('task', { task: id, grp: groupId || state.race?.flymasterGroupId || '' }))
+      .then((task) => {
+        if (state.flymasterTaskLoading !== id && state.flymasterTaskId === id) return;
+        state.flymasterTaskId = id;
+        state.mapFeatures = normalizeFlymasterTask(task, id);
+        renderMapFeatures();
+        updateSourceFeaturesMenu();
+      })
+      .catch((err) => console.warn(`Flymaster task ${id} load failed`, err))
+      .finally(() => {
+        if (state.flymasterTaskLoading === id) state.flymasterTaskLoading = null;
+      });
   }
 
   function upsertFlymasterRacer(sn, name) {
@@ -987,6 +1006,32 @@
     })).filter((r) => r.points.length >= 2);
   }
 
+  function normalizeFlymasterTask(data, taskId) {
+    const items = (Array.isArray(data?.items) ? data.items : []).map((item, index) => {
+      const lat = Number(item.a);
+      const lon = Number(item.o);
+      const radiusM = Number.parseFloat(item.s || '') * 1000;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return {
+        id: `${taskId}:${index}`,
+        name: item.n || `TP${index}`,
+        lat,
+        lon,
+        radiusM: Number.isFinite(radiusM) ? radiusM : 0,
+        type: String(item.type || ''),
+        distanceKm: Number.parseFloat(item.d || ''),
+      };
+    }).filter(Boolean);
+    const routePoints = dedupeLatLon(items).map((p) => [p.lat, p.lon]);
+    return {
+      source: 'flymaster-task',
+      taskId,
+      waypoints: items,
+      routes: routePoints.length >= 2 ? [{ id: taskId, name: `Flymaster task ${taskId}`, color: '#f59f00', points: routePoints }] : [],
+      collections: data || null,
+    };
+  }
+
   function renderMapFeatures() {
     state.routeLayer.clearLayers();
     state.waypointLayer.clearLayers();
@@ -1008,7 +1053,19 @@
         title: wp.name,
         bubblingMouseEvents: false,
       }).addTo(state.waypointLayer);
-      marker.bindPopup(locationPopupHtml(`Waypoint: ${wp.name}`, wp.lat, wp.lon));
+      const details = wp.radiusM ? `Radius: ${formatDistance(wp.radiusM)}${wp.distanceKm ? `<br>Leg/Dist: ${Number(wp.distanceKm).toFixed(1)} km` : ''}` : '';
+      marker.bindPopup(locationPopupHtml(`Waypoint: ${wp.name}`, wp.lat, wp.lon, details));
+      if (wp.radiusM && wp.radiusM > 0) {
+        L.circle([wp.lat, wp.lon], {
+          radius: wp.radiusM,
+          color: '#f59f00',
+          weight: 2,
+          opacity: 0.7,
+          fillColor: '#f59f00',
+          fillOpacity: 0.06,
+          interactive: false,
+        }).addTo(state.waypointLayer);
+      }
     }
   }
 
@@ -1312,28 +1369,20 @@
   }
 
   function updateRaceSourceFeatureTrack() {
-    if (!state.raceMode || !state.sourceFeatureSource) return;
-    const racer = state.racers.find((item) => item.id === state.sourceFeatureSource.racerId);
-    const source = racer?.sources.find((item) => item.type === state.sourceFeatureSource.type && (item.name || item.id) === (state.sourceFeatureSource.name || state.sourceFeatureSource.id));
-    const history = source?.latestPosition?.history || [];
-    state.racerTrail.setLatLngs(history.map((p) => [p.lat, p.lon]));
-    state.racerTrail.setStyle({ color: racer ? racerColor(racer.id) : '#64748b', opacity: 0.45, dashArray: '8 8' });
-    if (history.length > 1) state.racerTrail.bindPopup(`<b>Map feature track</b><br>${escapeHtml(racer?.name || state.sourceFeatureSource.racerName || 'source')} · ${escapeHtml(sourceTypeLabel(source?.type || state.sourceFeatureSource.type))}<br>${history.length} points`);
+    if (state.raceMode) state.racerTrail.setLatLngs([]);
   }
 
   function updateSourceFeaturesMenu() {
     const button = $('toggle-source-features');
-    const featureRacer = state.raceMode && state.sourceFeatureSource ? state.racers.find((item) => item.id === state.sourceFeatureSource.racerId) : null;
-    const featureSource = featureRacer?.sources.find((item) => item.type === state.sourceFeatureSource?.type && (item.name || item.id) === (state.sourceFeatureSource.name || state.sourceFeatureSource.id));
-    const history = state.raceMode ? featureSource?.latestPosition?.history : state.racer?.history;
+    const history = state.raceMode ? [] : state.racer?.history;
     const hasHistory = !!(history && history.length > 1);
     const w = state.mapFeatures.waypoints.length;
     const r = state.mapFeatures.routes.length;
     state.sourceFeaturesDetected = hasHistory || w > 0 || r > 0;
     button.classList.toggle('hidden', !state.sourceFeaturesDetected);
-    const label = state.raceMode ? 'source features' : 'Garmin features';
+    const label = state.raceMode ? 'race task' : 'Garmin features';
     button.textContent = state.sourceFeaturesVisible ? `Hide ${label}` : `Show ${label}`;
-    button.title = `${w} waypoints, ${r} routes${hasHistory ? ', history track' : ''}`;
+    button.title = state.raceMode ? `${w} turnpoints, ${r} route${state.flymasterTaskId ? ` · Flymaster task ${state.flymasterTaskId}` : ''}` : `${w} waypoints, ${r} routes${hasHistory ? ', history track' : ''}`;
   }
 
   function switchRaceMode() {
@@ -1408,8 +1457,8 @@
       const b = bearingDeg(state.me.lat, state.me.lon, target.lat, target.lon);
       setText('range', `${formatDistance(d)} · ${Math.round(b)}°`);
     } else setText('range', state.me ? 'no racers' : 'waiting GPS');
-    const featureSource = state.sourceFeatureSource ? ` · map features from ${state.sourceFeatureSource.racerName}` : '';
-    setText('info', `Race: ${state.race?.name || '—'} · ${state.racers.length} racers · ${supportedSourceSummary()} sources${featureSource}`);
+    const taskInfo = state.flymasterTaskId ? ` · Flymaster task ${state.flymasterTaskId}` : '';
+    setText('info', `Race: ${state.race?.name || '—'} · ${state.racers.length} racers · ${supportedSourceSummary()} sources${taskInfo}`);
     updateFitButton();
   }
 
@@ -1568,17 +1617,8 @@
       timezone: raceTimezone,
       flymasterGroupId,
       racers,
-      sourceFeatureSource: findSourceFeatureSource(racers),
+      sourceFeatureSource: null,
     };
-  }
-
-  function findSourceFeatureSource(racers) {
-    for (const racer of racers) {
-      if (!racer.useMapFeatures) continue;
-      const source = racer.sources.find((item) => item.type === 'garmin-mapshare');
-      if (source) return Object.assign({ racerId: racer.id, racerName: racer.name }, source);
-    }
-    return null;
   }
 
   function rowToRacer(row, index) {

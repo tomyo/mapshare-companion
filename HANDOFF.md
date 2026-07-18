@@ -36,7 +36,7 @@ https://share.garmin.com/nhayes
 - Base map preference is stored in `localStorage` under `garminRaceTracker.baseMap`; valid values are `street` and `topo`. Topo uses OpenTopoMap public tiles.
 - Imported KML is stored in `localStorage` under `garminRaceTracker.importedKml`, rendered as an independent map layer, and toggled from the action row. KML can be imported from the menu, Android/browser share target, and supported File Handling API launches.
 - Garmin/source features are separate from imported KML. If source features are detected, the top-right menu shows `Hide/Show Garmin features`; its visibility preference is stored under `garminRaceTracker.sourceFeaturesVisible`.
-- Flymaster group mode is available at `/race/flymaster/<group-id>` (for example `/race/flymaster/7801`). It connects directly to Flymaster's public live WebSocket (`wss://lb.flymaster.net:8081`), decodes MessagePack via Flymaster's `msgpack.min.js`, and normalizes `pilot_list`/`tick` messages into the existing multi-racer race position shape. Sheet race mode can also read `Config.FlymasterGroup` and map live Flymaster positions into roster racers by `Racers.FlymasterId`.
+- Flymaster group mode is available at `/race/flymaster/<group-id>` (for example `/race/flymaster/7801`). It connects directly to Flymaster's public live WebSocket (`wss://lb.flymaster.net:8081`), decodes MessagePack via Flymaster's `msgpack.min.js`, and normalizes `pilot_list`/`tick` messages into the existing multi-racer race position shape. Sheet race mode can also read `Config.FlymasterGroup` and map live Flymaster positions into roster racers by `Racers.FlymasterId`. In race mode, Flymaster task JSON (`/api/flymaster?type=task&task=<tk>`) is the race path/turnpoint source; Garmin source features are only loaded in solo mode.
 - The top-right `⋮` tracker menu currently has `Enter/Exit race`, `Import KML`, conditional `Hide/Show Garmin features`, and `Change racer`; Change racer clears the saved `localStorage` racer and navigates back to `/`. Enter race opens `/race/transcapixaba-2026`; Exit race returns to the saved solo racer or `/`.
 - Explicit single-racer targets auto-start:
   - `/<mapshare-name>`
@@ -74,7 +74,7 @@ public/sw.js           Service worker for install/offline app shell
 public/icon.svg        Source icon; PNG icons live in public/icons/
 api/garmin.js          Vercel Edge Function Garmin proxy
 api/spot.js            Vercel Edge Function SPOT public feed proxy
-api/flymaster.js       Vercel Edge Function Flymaster group/trace metadata proxy
+api/flymaster.js       Vercel Edge Function Flymaster group/task/trace proxy
 vercel.json            Rewrites all non-/api paths to /index.html
 src/*                  Legacy bookmarklet/userscript code
 runtime dist/*         Generated bookmarklet/userscript artifacts

@@ -1,6 +1,6 @@
 export const config = { runtime: 'edge' };
 
-const TYPES = new Set(['group', 'trace']);
+const TYPES = new Set(['group', 'trace', 'task']);
 
 export default async function handler(request) {
   const url = new URL(request.url);
@@ -10,9 +10,9 @@ export default async function handler(request) {
   if (!TYPES.has(type)) {
     return json({ error: `Invalid type. Use one of: ${Array.from(TYPES).join(', ')}` }, 400);
   }
-  if (!grp) return json({ error: 'Missing or invalid Flymaster group id.' }, 400);
+  if (!grp && type !== 'task') return json({ error: 'Missing or invalid Flymaster group id.' }, 400);
 
-  const upstream = upstreamUrl(type, { grp, p: url.searchParams.get('p') || '', d: url.searchParams.get('d') || '' });
+  const upstream = upstreamUrl(type, { grp, p: url.searchParams.get('p') || '', d: url.searchParams.get('d') || '', task: url.searchParams.get('task') || url.searchParams.get('tk') || '' });
   if (!upstream) return json({ error: 'Missing or invalid Flymaster trace parameters.' }, 400);
 
   try {
@@ -22,7 +22,7 @@ export default async function handler(request) {
         referer: `https://lt.flymaster.net/bs.php?grp=${encodeURIComponent(grp)}`,
         'user-agent': 'Mozilla/5.0 MapShareCompanion/0.1',
       },
-      cf: { cacheTtl: type === 'group' ? 60 : 15, cacheEverything: false },
+      cf: { cacheTtl: type === 'group' ? 60 : type === 'task' ? 300 : 15, cacheEverything: false },
     });
     const body = await res.text();
     if (!res.ok) return json({ error: `Flymaster returned HTTP ${res.status}`, upstream }, res.status);
@@ -30,7 +30,7 @@ export default async function handler(request) {
       status: 200,
       headers: {
         'content-type': 'application/json; charset=utf-8',
-        'cache-control': type === 'group' ? 's-maxage=60, stale-while-revalidate=300' : 's-maxage=15, stale-while-revalidate=30',
+        'cache-control': type === 'group' ? 's-maxage=60, stale-while-revalidate=300' : type === 'task' ? 's-maxage=300, stale-while-revalidate=3600' : 's-maxage=15, stale-while-revalidate=30',
         'access-control-allow-origin': '*',
       },
     });
@@ -41,6 +41,10 @@ export default async function handler(request) {
 
 function upstreamUrl(type, params) {
   if (type === 'group') return `https://lb.flymaster.net/groupi.php?grp=${encodeURIComponent(params.grp)}`;
+  if (type === 'task') {
+    const task = normalizeDigits(params.task);
+    return task ? `https://lt.flymaster.net/json/kml/${encodeURIComponent(task)}.json` : '';
+  }
   const p = normalizeDigits(params.p);
   const d = normalizeDigits(params.d);
   if (!p || !d) return '';

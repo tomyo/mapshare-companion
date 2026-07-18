@@ -103,7 +103,7 @@ Flymaster group mode can follow public Flymaster Live Tracking groups, for examp
 https://mapshare-companion.vercel.app/race/flymaster/7801
 ```
 
-It connects to Flymaster's live WebSocket for group positions and uses `/api/flymaster` for group metadata/history proxying.
+It connects to Flymaster's live WebSocket for group positions. In race mode, Flymaster is also the primary source for race task/turnpoints when the live stream publishes a task id; Garmin features are used only in solo mode.
 
 The app uses Edge Function proxies:
 
@@ -115,6 +115,7 @@ The app uses Edge Function proxies:
 /api/garmin?name=<mapshare-name>&type=collections
 /api/spot?id=<spot-feed-id>&type=message
 /api/flymaster?type=group&grp=<group-id>
+/api/flymaster?type=task&task=<task-id>
 /api/flymaster?type=trace&grp=<group-id>&p=<pilot-sn>&d=<flymaster-timestamp>
 ```
 
