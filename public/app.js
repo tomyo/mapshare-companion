@@ -121,6 +121,13 @@
       toggleRaceTrack(trackButton.dataset.toggleTrackRacer);
       return;
     }
+    const sourceTrackButton = event.target.closest('[data-toggle-source-track]');
+    if (sourceTrackButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSourceTrack(sourceTrackButton.dataset.toggleSourceTrack, sourceTrackButton.dataset.sourceTrackRacer);
+      return;
+    }
     const measureButton = event.target.closest('[data-measure-lat]');
     if (measureButton) {
       event.preventDefault();
@@ -516,9 +523,9 @@
     const conflict = racer.sourceConflict ? `<br><b>⚠ Source conflict</b>: ${escapeHtml(racer.sourceConflict.message)}` : '';
     const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(r.sourceLabel || sourceTypeLabel(r.sourceType))}${conflict}${sourceDiagnosticsHtml(racer)}`;
     const trackButton = hasTrack
-      ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>`
-      : '<button type="button" disabled title="The tracking source has not published enough history points for this racer yet">No track yet</button>';
-    return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button>${trackButton}</div>`;
+      ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide active track' : 'Show active track'}</button>`
+      : '<button type="button" disabled title="The active source has not published enough history points for this racer yet">No active track</button>';
+    return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button>${trackButton}</div>${sourceTrackButtonsHtml(racer)}`;
   }
 
   function sourceDiagnosticsHtml(racer) {
@@ -544,18 +551,52 @@
     return position.sourceType === source.type && String(position.sourceName || '') === String(sourceName);
   }
 
+  function sourceTrackButtonsHtml(racer) {
+    if (!racer.sources || racer.sources.length <= 1) return '';
+    const buttons = racer.sources.map((source) => {
+      const key = sourceTrackKey(racer.id, source);
+      const history = source.latestPosition?.history || [];
+      const visible = state.visibleRaceTrackIds.has(key);
+      const label = sourceDisplayLabel(source);
+      if (history.length < 2) return `<button type="button" disabled title="No ${escapeHtml(label)} track yet">No ${escapeHtml(label)} track</button>`;
+      return `<button type="button" data-toggle-source-track="${escapeHtml(key)}" data-source-track-racer="${escapeHtml(racer.id)}">${visible ? 'Hide' : 'Show'} ${escapeHtml(label)} track</button>`;
+    }).join('');
+    return `<div class="map-popup-actions source-track-actions"><b style="width:100%;font-size:12px;color:#475569">Source tracks</b>${buttons}</div>`;
+  }
+
+  function sourceTrackKey(racerId, source) {
+    return `${racerId}::${source.type}::${encodeURIComponent(source.name || source.id || source.raw || '')}`;
+  }
+
   function renderRaceTracks() {
     if (!state.raceTrackLayer) return;
     state.raceTrackLayer.clearLayers();
     for (const racer of state.racers) {
-      const history = racer.position?.history || [];
-      if (!state.visibleRaceTrackIds.has(racer.id) || history.length < 2) continue;
-      L.polyline(history.map((p) => [p.lat, p.lon]), {
-        color: racerColor(racer.id),
-        weight: 4,
-        opacity: 0.85,
-      }).bindPopup(`<b>${escapeHtml(racer.name)} track</b><br>${history.length} points`).addTo(state.raceTrackLayer);
+      const activeHistory = racer.position?.history || [];
+      if (state.visibleRaceTrackIds.has(racer.id) && activeHistory.length >= 2) {
+        L.polyline(activeHistory.map((p) => [p.lat, p.lon]), {
+          color: racerColor(racer.id),
+          weight: 5,
+          opacity: 0.9,
+        }).bindPopup(`<b>${escapeHtml(racer.name)} active track</b><br>${escapeHtml(racer.position.sourceLabel || sourceTypeLabel(racer.position.sourceType))}<br>${activeHistory.length} points`).addTo(state.raceTrackLayer);
+      }
+      for (const source of racer.sources || []) {
+        const key = sourceTrackKey(racer.id, source);
+        const history = source.latestPosition?.history || [];
+        if (!state.visibleRaceTrackIds.has(key) || history.length < 2) continue;
+        L.polyline(history.map((p) => [p.lat, p.lon]), sourceTrackStyle(racer, source))
+          .bindPopup(`<b>${escapeHtml(racer.name)} ${escapeHtml(sourceDisplayLabel(source))} track</b><br>${history.length} points`)
+          .addTo(state.raceTrackLayer);
+      }
     }
+  }
+
+  function sourceTrackStyle(racer, source) {
+    const style = { color: racerColor(racer.id), weight: 3, opacity: 0.72 };
+    if (source.type === 'garmin-mapshare') style.dashArray = '8 6';
+    else if (source.type === 'spot') style.dashArray = '2 8';
+    else if (source.type === 'flymaster') style.dashArray = '';
+    return style;
   }
 
   function toggleRaceTrack(id) {
@@ -565,6 +606,15 @@
     saveVisibleRaceTracks(state.race.id, state.visibleRaceTrackIds);
     renderRaceTracks();
     refreshOpenRacerPopup(id);
+  }
+
+  function toggleSourceTrack(key, racerId) {
+    if (!key || !state.raceMode || !state.race) return;
+    if (state.visibleRaceTrackIds.has(key)) state.visibleRaceTrackIds.delete(key);
+    else state.visibleRaceTrackIds.add(key);
+    saveVisibleRaceTracks(state.race.id, state.visibleRaceTrackIds);
+    renderRaceTracks();
+    refreshOpenRacerPopup(racerId);
   }
 
   function refreshOpenRacerPopup(id) {
