@@ -1,15 +1,15 @@
 # MapShare Companion
 
-A support-crew companion webapp for any public Garmin MapShare page like `https://share.garmin.com/<mapshare-name>`.
+A support-crew companion webapp for race rosters and solo tracking with public Garmin MapShare or SPOT sources.
 
-The primary deliverable is a standalone Vercel webapp. It asks for a Garmin username/shared URL, stores the normalized MapShare name in `localStorage`, and shows this race-support UX:
+The primary deliverable is a standalone Vercel webapp. The launcher can enter the Transcapixaba race mode or start solo tracking from a Garmin MapShare username/link or SPOT feed ID/link. It shows this race-support UX:
 
-- racer/Garmin location from the public KML feed
+- racer location from Garmin public KML feeds or SPOT public feed JSON
 - your phone location from browser GPS
 - distance and bearing from you to the racer
 - racer speed, course, GPS fix, elevation, and last update
 - Street/topographic map with both markers and a connecting line
-- single-racer Garmin MapShare tracking, or multi-racer Garmin/SPOT race rosters from Google Sheets
+- solo Garmin/SPOT tracking, or multi-racer Garmin/SPOT race rosters from Google Sheets
 - Garmin MapShare waypoints and routes from `/<mapshare-name>/Waypoints` and `/<mapshare-name>/routes/`
 - any track/history points present in the public KML feed
 - quick header refresh button plus controls for Fit both, Racer, Me, Street/Topo map toggle, and Hide/Show KML
@@ -19,10 +19,10 @@ The primary deliverable is a standalone Vercel webapp. It asks for a Garmin user
 - distance measuring: choose **Measure from here** in any location popup, then tap map points to update a straight-line distance until you close the measuring popup or click outside the map
 - subtle distance label on the dotted line between your location and the racer
 - remembered base map preference: Street uses OpenStreetMap, Topo uses OpenTopoMap elevation contours
-- top-right menu can switch between solo mode and Transcapixaba 2026 race mode
+- top-right menu can enter Transcapixaba 2026 race mode from solo mode, or leave race mode back to the launcher
 - KML import from the top-right menu or supported Android share/open flows, persisted locally and toggleable from the action row
 - Garmin/source features are separate from imported KML; when detected, they can be shown/hidden from the top-right menu
-- race mode shows subtle racer name labels; racer popups can show/hide each racer's source history track locally
+- race mode uses the race name as the app title, hides solo-only actions, and shows subtle racer name labels; racer popups can show/hide each racer's source history track locally
 
 ## Why this works
 
@@ -53,8 +53,9 @@ npm run deploy
 Production deployment:
 
 ```text
-https://mapshare-companion.vercel.app/          # asks for username / shared URL
-https://mapshare-companion.vercel.app/nhayes
+https://mapshare-companion.vercel.app/          # launcher: enter race or track solo
+https://mapshare-companion.vercel.app/nhayes    # solo Garmin MapShare
+https://mapshare-companion.vercel.app/spot/<spot-feed-id>  # solo SPOT
 https://mapshare-companion.vercel.app/race/transcapixaba-2026
 https://mapshare-companion.vercel.app/?sheet=<google-sheet-id>&gid=0
 ```
@@ -70,31 +71,35 @@ Name | GarminLink | SPOT | GsmLink | FlymasterLink | UseMapFeatures | Notes
 Generic usage pattern:
 
 ```text
-https://<your-vercel-app>.vercel.app/          # asks for username / shared URL
+https://<your-vercel-app>.vercel.app/          # launcher
 https://<your-vercel-app>.vercel.app/?map=<mapshare-name>
+https://<your-vercel-app>.vercel.app/?spot=<spot-feed-id>
 https://<your-vercel-app>.vercel.app/<mapshare-name>
+https://<your-vercel-app>.vercel.app/spot/<spot-feed-id>
 ```
 
-Submitting the root form saves the MapShare name in `localStorage` and redirects to `/<mapshare-name>`. Reopening the app later redirects to the saved racer automatically, so the user does not need to re-enter it. Use the top-right menu's **Change racer** action to clear the saved racer and return to setup.
+Submitting a Garmin source in the root form saves the normalized MapShare name in `localStorage` and redirects to `/<mapshare-name>`. Reopening the launcher pre-fills that saved Garmin racer but does not auto-enter it, so the user can choose the race or a different solo source. Use solo mode's top-right **Change racer** action to clear the saved Garmin racer and return to the launcher.
 
 ## PWA install / Garmin link sharing
 
-The app includes a web app manifest, install icons, and a service worker, so Chrome mobile can install it as a standalone PWA. The manifest launches `/?launch=1`; if a racer was previously selected, the app redirects back to `/<mapshare-name>` using the saved `localStorage` value.
+The app includes a web app manifest, install icons, and a service worker, so Chrome mobile can install it as a standalone PWA. The manifest launches the root launcher.
 
 It also registers as a Web Share Target: share a Garmin MapShare URL such as `https://share.garmin.com/nhayes` to **MapShare Companion**, and the app will extract the racer name and redirect to `/nhayes`. KML files can also be shared/opened into the installed app on supported browsers; the app imports and persists them as the local KML layer.
 
 Browsers do not let unrelated PWAs directly hijack normal `https://share.garmin.com/...` link clicks; sharing the Garmin link to the installed app is the supported path.
 
-The app uses an Edge Function proxy:
+The app uses Edge Function proxies:
 
 ```text
 /api/garmin?name=<mapshare-name>&type=feed
+/api/garmin?name=<mapshare-name>&type=feed&d1=<iso-start>&d2=<iso-end>
 /api/garmin?name=<mapshare-name>&type=waypoints
 /api/garmin?name=<mapshare-name>&type=routes
 /api/garmin?name=<mapshare-name>&type=collections
+/api/spot?id=<spot-feed-id>&type=message
 ```
 
-That avoids Garmin CORS problems and works directly in Chrome mobile without bookmarklets.
+That avoids Garmin/SPOT CORS problems and works directly in Chrome mobile without bookmarklets.
 
 ## Handoff / project spec
 
