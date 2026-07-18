@@ -14,6 +14,7 @@ The primary deliverable is a standalone Vercel webapp. It asks for a Garmin user
 - any track/history points present in the public KML feed
 - quick header refresh button plus controls for Fit both, Racer, Me, Street/Topo map toggle, and Hide/Show KML
 - auto-refresh of Garmin data every 60 seconds, with SPOT feeds throttled to roughly 2.5 minutes per feed
+- race-mode Garmin MapShare history backfill via date-range KML, cached locally to avoid refetching full history on page refresh
 - contextual map popups: tap the racer, a waypoint, your location, or any map point to open that point in Google Maps or OSM
 - distance measuring: choose **Measure from here** in any location popup, then tap map points to update a straight-line distance until you close the measuring popup or click outside the map
 - subtle distance label on the dotted line between your location and the racer

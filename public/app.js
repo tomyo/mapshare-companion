@@ -6,6 +6,9 @@
   const KML_KEY = 'garminRaceTracker.importedKml';
   const SOURCE_FEATURES_KEY = 'garminRaceTracker.sourceFeaturesVisible';
   const TRANSCAPIXABA_PATH = '/race/transcapixaba-2026';
+  const TRANSCAPIXABA_START = '2026-07-12T03:00:00Z';
+  const TRANSCAPIXABA_END = '2026-07-26T02:59:59Z';
+  const HISTORY_CACHE_VERSION = 1;
   const REFRESH_MS = 60000;
   const SPOT_REFRESH_MS = 150000;
   const STALE_AFTER_MIN = 15;
@@ -268,7 +271,7 @@
   async function refreshRacerSource(racer, source) {
     let position = null;
     if (source.type === 'garmin-mapshare') {
-      position = parseKml(await fetchText(apiUrlForName(source.name, 'feed')));
+      position = await fetchGarminPosition(source);
       if (!position) throw new Error(`No Garmin position for ${source.name}`);
     } else if (source.type === 'spot') {
       position = await fetchSpotPosition(source);
@@ -283,6 +286,35 @@
       sourceName: source.name || source.id || '',
       sourceType: source.type,
     });
+  }
+
+  async function fetchGarminPosition(source) {
+    const race = state.raceMode ? state.race : null;
+    const cached = race ? loadSourceHistoryCache(race.id, source) : null;
+    let historical = cached;
+    if (race?.start && !historical) {
+      try {
+        const ranged = parseKml(await fetchText(apiUrlForName(source.name, 'feed', { d1: race.start, d2: race.end || new Date().toISOString() })));
+        if (ranged) {
+          historical = ranged;
+          saveSourceHistoryCache(race.id, source, ranged);
+        }
+      } catch (err) {
+        console.warn(`Garmin history backfill failed for ${source.name}`, err);
+      }
+    }
+
+    let latest = null;
+    try {
+      latest = parseKml(await fetchText(apiUrlForName(source.name, 'feed')));
+    } catch (err) {
+      if (historical) return clonePosition(historical);
+      throw err;
+    }
+    if (!latest) return historical ? clonePosition(historical) : null;
+    if (historical) latest.history = mergePositionHistory(historical, latest);
+    if (race?.start) saveSourceHistoryCache(race.id, source, latest);
+    return latest;
   }
 
   async function fetchSpotPosition(source) {
@@ -405,8 +437,11 @@
     return apiUrlForName(state.mapName, type);
   }
 
-  function apiUrlForName(name, type) {
-    return `/api/garmin?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&_=${Date.now()}`;
+  function apiUrlForName(name, type, options = {}) {
+    const params = new URLSearchParams({ name, type, _: String(Date.now()) });
+    if (options.d1) params.set('d1', options.d1);
+    if (options.d2) params.set('d2', options.d2);
+    return `/api/garmin?${params}`;
   }
 
   function spotApiUrl(id) {
@@ -1051,7 +1086,7 @@
   function maybeInitialFit() { if (state.raceMode) { if (!state.firstFitDone && racePositions().length) { fitRaceTargets(); state.firstFitDone = true; } return; } if (!state.firstFitDone && state.racer && state.me) { fitBoth(); state.firstFitDone = true; } else if (!state.firstFitDone && state.racer) centerRacer(); }
 
   function parseRaceSheetParams(params, pathname) {
-    if (pathname === TRANSCAPIXABA_PATH) return { id: '1h-iNS8rby-P8WkEKP98rxMRpEMdOrUjznQxjr9weH8g', gid: '0', name: 'Transcapixaba 2026' };
+    if (pathname === TRANSCAPIXABA_PATH) return { id: '1h-iNS8rby-P8WkEKP98rxMRpEMdOrUjznQxjr9weH8g', gid: '0', name: 'Transcapixaba 2026', start: TRANSCAPIXABA_START, end: TRANSCAPIXABA_END };
     const raw = params.get('raceSheet') || params.get('sheet') || params.get('sheetId') || '';
     if (!raw) return null;
     const parsed = parseGoogleSheetRef(raw);
@@ -1076,7 +1111,7 @@
     const rows = await getSheetData(spec.id, spec.gid);
     const racers = rows.map(rowToRacer).filter(Boolean);
     if (!racers.length) throw new Error('No racers with supported sources found in sheet.');
-    return { id: `sheet:${spec.id}:${spec.gid}`, name: spec.name || 'Race sheet', racers, sourceFeatureSource: findSourceFeatureSource(racers) };
+    return { id: `sheet:${spec.id}:${spec.gid}`, name: spec.name || 'Race sheet', start: spec.start || '', end: spec.end || '', racers, sourceFeatureSource: findSourceFeatureSource(racers) };
   }
 
   function findSourceFeatureSource(racers) {
@@ -1236,6 +1271,30 @@
   function visibleTracksKey(raceId) { return `garminRaceTracker.visibleTracks.${raceId}`; }
   function loadVisibleRaceTracks(raceId) { try { return new Set(JSON.parse(localStorage.getItem(visibleTracksKey(raceId)) || '[]')); } catch (_) { return new Set(); } }
   function saveVisibleRaceTracks(raceId, ids) { try { localStorage.setItem(visibleTracksKey(raceId), JSON.stringify(Array.from(ids))); } catch (_) {} }
+  function sourceHistoryKey(raceId, source) { return `garminRaceTracker.sourceHistory.${HISTORY_CACHE_VERSION}.${encodeURIComponent(raceId)}.${source.type}.${encodeURIComponent(source.name || source.id || source.raw || '')}`; }
+  function loadSourceHistoryCache(raceId, source) {
+    try {
+      const cached = JSON.parse(localStorage.getItem(sourceHistoryKey(raceId, source)) || 'null');
+      const position = cached?.position;
+      if (cached?.version !== HISTORY_CACHE_VERSION || !position) return null;
+      const lat = Number(position.lat);
+      const lon = Number(position.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      const history = Array.isArray(position.history) ? position.history.map((p) => ({ lat: Number(p.lat), lon: Number(p.lon), ele: p.ele == null ? null : Number(p.ele) })).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon)) : [];
+      return Object.assign({}, position, { lat, lon, history: dedupePositionHistory(history.length ? history : [position]) });
+    } catch (_) {
+      return null;
+    }
+  }
+  function saveSourceHistoryCache(raceId, source, position) {
+    try {
+      const copy = clonePosition(position);
+      if (copy?.history) copy.history = dedupePositionHistory(copy.history).slice(-3000);
+      localStorage.setItem(sourceHistoryKey(raceId, source), JSON.stringify({ version: HISTORY_CACHE_VERSION, savedAt: Date.now(), position: copy }));
+    } catch (err) {
+      console.warn('Could not save source history cache', err);
+    }
+  }
   function racerColor(id) { const palette = ['#e03131', '#1971c2', '#2f9e44', '#f08c00', '#9c36b5', '#0ca678', '#c92a2a', '#364fc7']; let hash = 0; for (const ch of String(id)) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0; return palette[Math.abs(hash) % palette.length]; }
   function loadSavedKml() { try { return localStorage.getItem(KML_KEY) || ''; } catch (_) { return ''; } }
   function saveImportedKml(text) { try { localStorage.setItem(KML_KEY, text); } catch (_) {} }

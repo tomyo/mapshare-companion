@@ -6,6 +6,8 @@ export default async function handler(request) {
   const url = new URL(request.url);
   const name = normalizeMapName(url.searchParams.get('name') || '');
   const type = (url.searchParams.get('type') || 'feed').toLowerCase();
+  const d1 = normalizeDateParam(url.searchParams.get('d1') || url.searchParams.get('D1') || '');
+  const d2 = normalizeDateParam(url.searchParams.get('d2') || url.searchParams.get('D2') || '');
 
   if (!name) {
     return json({ error: 'Missing or invalid Garmin MapShare name.' }, 400);
@@ -14,7 +16,7 @@ export default async function handler(request) {
     return json({ error: `Invalid type. Use one of: ${Array.from(TYPES).join(', ')}` }, 400);
   }
 
-  const upstream = upstreamUrl(name, type);
+  const upstream = upstreamUrl(name, type, { d1, d2 });
   try {
     const res = await fetch(upstream, {
       headers: {
@@ -42,9 +44,15 @@ export default async function handler(request) {
   }
 }
 
-function upstreamUrl(name, type) {
+function upstreamUrl(name, type, options = {}) {
   const safeName = encodeURIComponent(name);
-  if (type === 'feed') return `https://share.garmin.com/feed/share/${safeName}`;
+  if (type === 'feed') {
+    const params = new URLSearchParams();
+    if (options.d1) params.set('d1', options.d1);
+    if (options.d2) params.set('d2', options.d2);
+    const query = params.toString();
+    return `https://share.garmin.com/feed/share/${safeName}${query ? `?${query}` : ''}`;
+  }
   if (type === 'waypoints') return `https://share.garmin.com/${safeName}/Waypoints`;
   if (type === 'routes') return `https://share.garmin.com/${safeName}/routes/`;
   return `https://share.garmin.com/${safeName}/Collections`;
@@ -54,6 +62,12 @@ function normalizeMapName(value) {
   const name = String(value).trim().replace(/^\/+|\/+$/g, '');
   if (!/^[A-Za-z0-9_-]{1,100}$/.test(name)) return '';
   return name;
+}
+
+function normalizeDateParam(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw.length > 40 || !Number.isFinite(Date.parse(raw))) return '';
+  return raw;
 }
 
 function contentType(type) {
