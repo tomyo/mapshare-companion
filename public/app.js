@@ -2,6 +2,7 @@
   'use strict';
 
   const STORE_KEY = 'garminRaceTracker.mapName';
+  const BASE_MAP_KEY = 'garminRaceTracker.baseMap';
   const REFRESH_MS = 60000;
   const STALE_AFTER_MIN = 15;
 
@@ -9,6 +10,8 @@
   const state = {
     mapName: '',
     map: null,
+    baseLayer: null,
+    baseMapType: 'street',
     layers: null,
     featureLayers: null,
     waypointLayer: null,
@@ -80,6 +83,7 @@
   $('center-me').addEventListener('click', centerMe);
   $('refresh').addEventListener('click', () => refreshAll());
   $('toggle-features').addEventListener('click', toggleMapFeatures);
+  $('toggle-basemap').addEventListener('click', toggleBaseMap);
 
   const launchParams = new URL(location.href).searchParams;
   const sharedMap = parseSharedMap(launchParams);
@@ -120,10 +124,7 @@
 
   function initMap() {
     state.map = L.map('map', { zoomControl: true }).setView([0, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '© OpenStreetMap contributors',
-    }).addTo(state.map);
+    setBaseMap(loadBaseMapType());
     state.layers = L.layerGroup().addTo(state.map);
     state.featureLayers = L.layerGroup().addTo(state.map);
     state.routeLayer = L.layerGroup().addTo(state.featureLayers);
@@ -458,6 +459,40 @@
     button.title = `${w} waypoints, ${r} routes`;
   }
 
+  function toggleBaseMap() {
+    setBaseMap(state.baseMapType === 'topo' ? 'street' : 'topo');
+  }
+
+  function setBaseMap(type) {
+    const nextType = type === 'topo' ? 'topo' : 'street';
+    if (state.baseLayer) state.map.removeLayer(state.baseLayer);
+    state.baseLayer = createBaseLayer(nextType).addTo(state.map);
+    state.baseMapType = nextType;
+    saveBaseMapType(nextType);
+    updateBaseMapButton();
+  }
+
+  function createBaseLayer(type) {
+    if (type === 'topo') {
+      return L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        maxZoom: 17,
+        attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
+      });
+    }
+    return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors',
+    });
+  }
+
+  function updateBaseMapButton() {
+    const button = $('toggle-basemap');
+    const current = state.baseMapType === 'topo' ? 'Topo' : 'Street';
+    const next = state.baseMapType === 'topo' ? 'Street' : 'Topo';
+    button.textContent = `🗺️ ${next}`;
+    button.title = `Map: ${current}. Switch to ${next}.`;
+  }
+
   function fitBoth() {
     if (!state.racer) return;
     if (state.me) state.map.fitBounds([[state.me.lat, state.me.lon], [state.racer.lat, state.racer.lon]], { padding: [40, 40], maxZoom: 16 });
@@ -502,6 +537,8 @@
   function loadSavedMapName() { try { return sanitizeName(localStorage.getItem(STORE_KEY) || ''); } catch (_) { return ''; } }
   function saveMapName(name) { try { localStorage.setItem(STORE_KEY, name); } catch (_) {} }
   function clearSavedMapName() { try { localStorage.removeItem(STORE_KEY); } catch (_) {} }
+  function loadBaseMapType() { try { return localStorage.getItem(BASE_MAP_KEY) === 'topo' ? 'topo' : 'street'; } catch (_) { return 'street'; } }
+  function saveBaseMapType(type) { try { localStorage.setItem(BASE_MAP_KEY, type); } catch (_) {} }
   function showSetupError(msg) { $('setup-error').textContent = msg; }
   function setText(id, text) { $(id).textContent = text; }
   function textOf(el, localName) { const found = Array.from(el.childNodes).find((n) => n.localName === localName); return found ? found.textContent.trim() : ''; }
