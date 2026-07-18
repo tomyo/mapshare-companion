@@ -21,11 +21,13 @@
     routeLayer: null,
     trackLayer: null,
     kmlLayer: null,
+    raceTrackLayer: null,
     racerMarker: null,
     racerMarkers: new Map(),
     race: null,
     racers: [],
     selectedRacerIds: new Set(),
+    visibleRaceTrackIds: new Set(),
     meMarker: null,
     accuracyCircle: null,
     connector: null,
@@ -92,6 +94,13 @@
       event.preventDefault();
       event.stopPropagation();
       toggleSelectedRacer(followButton.dataset.followRacer);
+      return;
+    }
+    const trackButton = event.target.closest('[data-toggle-track-racer]');
+    if (trackButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleRaceTrack(trackButton.dataset.toggleTrackRacer);
       return;
     }
     const measureButton = event.target.closest('[data-measure-lat]');
@@ -172,6 +181,7 @@
       state.racers = race.racers;
       state.sourceFeatureSource = race.sourceFeatureSource;
       state.selectedRacerIds = loadSelectedRacers(race.id);
+      state.visibleRaceTrackIds = loadVisibleRaceTracks(race.id);
       $('map-name').textContent = race.name;
       updateFitButton();
       await refreshAll();
@@ -203,6 +213,7 @@
     state.trackLayer = L.layerGroup().addTo(state.featureLayers);
     state.waypointLayer = L.layerGroup().addTo(state.featureLayers);
     state.kmlLayer = L.layerGroup().addTo(state.map);
+    state.raceTrackLayer = L.layerGroup().addTo(state.map);
     state.measureLayer = L.layerGroup().addTo(state.map);
     state.racerTrail = L.polyline([], { color: '#0b73ff', weight: 4, opacity: 0.9 }).addTo(state.trackLayer);
     state.connector = L.polyline([], { color: '#ffd43b', weight: 3, opacity: 0.9, dashArray: '8 8' }).addTo(state.layers);
@@ -266,7 +277,7 @@
       const color = racerColor(racer.id);
       const icon = L.divIcon({
         className: 'racer-icon-wrap', iconSize: [38, 38], iconAnchor: [19, 19], popupAnchor: [0, -20],
-        html: `<div class="racer-icon ${selected ? 'selected' : ''}" style="background:${color}"><div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div>`,
+        html: `<div class="racer-icon ${selected ? 'selected' : ''}" style="background:${color}"><div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}">${escapeHtml(racer.name)}</div>`,
       });
       let marker = state.racerMarkers.get(racer.id);
       if (!marker) {
@@ -285,13 +296,39 @@
         state.racerMarkers.delete(id);
       }
     }
+    renderRaceTracks();
   }
 
   function raceRacerPopupHtml(racer) {
     const r = racer.position;
     const selected = state.selectedRacerIds.has(racer.id);
+    const trackVisible = state.visibleRaceTrackIds.has(racer.id);
+    const hasTrack = !!(r.history && r.history.length > 1);
     const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(r.time || r.timeUtc || '—')}<br>Source: ${escapeHtml(r.sourceLabel || r.sourceName || 'Garmin')}`;
-    return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button></div>`;
+    const trackButton = hasTrack ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>` : '';
+    return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button>${trackButton}</div>`;
+  }
+
+  function renderRaceTracks() {
+    if (!state.raceTrackLayer) return;
+    state.raceTrackLayer.clearLayers();
+    for (const racer of state.racers) {
+      const history = racer.position?.history || [];
+      if (!state.visibleRaceTrackIds.has(racer.id) || history.length < 2) continue;
+      L.polyline(history.map((p) => [p.lat, p.lon]), {
+        color: racerColor(racer.id),
+        weight: 4,
+        opacity: 0.85,
+      }).bindPopup(`<b>${escapeHtml(racer.name)} track</b><br>${history.length} points`).addTo(state.raceTrackLayer);
+    }
+  }
+
+  function toggleRaceTrack(id) {
+    if (!id || !state.raceMode || !state.race) return;
+    if (state.visibleRaceTrackIds.has(id)) state.visibleRaceTrackIds.delete(id);
+    else state.visibleRaceTrackIds.add(id);
+    saveVisibleRaceTracks(state.race.id, state.visibleRaceTrackIds);
+    renderRaceRacers();
   }
 
   async function loadMapFeatures(mapName = state.mapName) {
@@ -1014,6 +1051,9 @@
   function selectedKey(raceId) { return `garminRaceTracker.selectedRacers.${raceId}`; }
   function loadSelectedRacers(raceId) { try { return new Set(JSON.parse(localStorage.getItem(selectedKey(raceId)) || '[]')); } catch (_) { return new Set(); } }
   function saveSelectedRacers(raceId, ids) { try { localStorage.setItem(selectedKey(raceId), JSON.stringify(Array.from(ids))); } catch (_) {} }
+  function visibleTracksKey(raceId) { return `garminRaceTracker.visibleTracks.${raceId}`; }
+  function loadVisibleRaceTracks(raceId) { try { return new Set(JSON.parse(localStorage.getItem(visibleTracksKey(raceId)) || '[]')); } catch (_) { return new Set(); } }
+  function saveVisibleRaceTracks(raceId, ids) { try { localStorage.setItem(visibleTracksKey(raceId), JSON.stringify(Array.from(ids))); } catch (_) {} }
   function racerColor(id) { const palette = ['#e03131', '#1971c2', '#2f9e44', '#f08c00', '#9c36b5', '#0ca678', '#c92a2a', '#364fc7']; let hash = 0; for (const ch of String(id)) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0; return palette[Math.abs(hash) % palette.length]; }
   function loadSavedKml() { try { return localStorage.getItem(KML_KEY) || ''; } catch (_) { return ''; } }
   function saveImportedKml(text) { try { localStorage.setItem(KML_KEY, text); } catch (_) {} }

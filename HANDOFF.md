@@ -54,6 +54,8 @@ https://share.garmin.com/nhayes
   - Garmin waypoints/routes and KML history/track points when available
   - imported KML points/lines as a source-independent map/course layer
   - quick header refresh button plus controls: Fit all/selected, Racer(s), Me, Street/Topo base map toggle, Hide/Show KML
+  - race mode racer markers have subtle always-visible name labels
+  - race mode racer popups can Show/Hide that racer's Garmin history track; visible track IDs are stored locally per race under `garminRaceTracker.visibleTracks.<raceId>`
   - contextual map popups: tap racer, observer, waypoint, or any map point to open that point in Google Maps or OSM
   - popup action `Measure from here`: enters measuring mode, then map taps update a straight-line distance line/label until the measurement popup is closed or the user clicks outside the map
   - the dotted observer→racer connector includes a subtle permanent distance label in km

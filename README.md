@@ -21,6 +21,7 @@ The primary deliverable is a standalone Vercel webapp. It asks for a Garmin user
 - top-right menu can switch between solo mode and Transcapixaba 2026 race mode
 - KML import from the top-right menu or supported Android share/open flows, persisted locally and toggleable from the action row
 - Garmin/source features are separate from imported KML; when detected, they can be shown/hidden from the top-right menu
+- race mode shows subtle racer name labels; racer popups can show/hide each racer's Garmin history track locally
 
 ## Why this works
 
