@@ -12,6 +12,8 @@
   const REFRESH_MS = 60000;
   const SPOT_REFRESH_MS = 150000;
   const STALE_AFTER_MIN = 15;
+  const SOURCE_STALE_MIN = { flymaster: 5, 'garmin-mapshare': 15, spot: 30 };
+  const SOURCE_CONFLICT_DISTANCE_M = 1000;
   const FLYMASTER_WS_URL = 'wss://lb.flymaster.net:8081';
   const FLYMASTER_EPOCH_MS = Date.UTC(2000, 0, 1);
 
@@ -328,12 +330,8 @@
 
   async function refreshRaceRacer(racer) {
     const results = await Promise.allSettled(racer.sources.map((source) => refreshRacerSource(racer, source)));
-    const positions = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
-    positions.sort((a, b) => (b.utcMs || 0) - (a.utcMs || 0));
-    const latest = positions[0] || null;
-    if (latest) latest.history = mergePositionHistory(racer.position, latest);
-    racer.position = latest;
-    racer.error = positions.length ? '' : (results.find((r) => r.status === 'rejected')?.reason?.message || 'No supported source position');
+    updateRacerFromSourceCache(racer);
+    racer.error = racer.position ? '' : (results.find((r) => r.status === 'rejected')?.reason?.message || 'No supported source position');
   }
 
   async function refreshRacerSource(racer, source) {
@@ -515,7 +513,8 @@
     const selected = state.selectedRacerIds.has(racer.id);
     const trackVisible = state.visibleRaceTrackIds.has(racer.id);
     const hasTrack = !!(r.history && r.history.length > 1);
-    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(r.sourceLabel || sourceTypeLabel(r.sourceType))}${sourceDiagnosticsHtml(racer)}`;
+    const conflict = racer.sourceConflict ? `<br><b>⚠ Source conflict</b>: ${escapeHtml(racer.sourceConflict.message)}` : '';
+    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(r.sourceLabel || sourceTypeLabel(r.sourceType))}${conflict}${sourceDiagnosticsHtml(racer)}`;
     const trackButton = hasTrack
       ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>`
       : '<button type="button" disabled title="The tracking source has not published enough history points for this racer yet">No track yet</button>';
@@ -527,8 +526,11 @@
     const rows = racer.sources.map((source) => {
       const latest = source.latestPosition;
       const active = isActiveSource(racer.position, source);
-      const status = latest ? formatUpdatedTime(latest) : source.lastError ? `error: ${source.lastError}` : 'no data yet';
-      const stale = latest && staleMinutes(latest) != null && staleMinutes(latest) > STALE_AFTER_MIN;
+      const stale = !!(latest && isSourcePositionStale(source, latest));
+      const distance = latest && racer.position && !active ? ` · ${formatDistance(distanceM(racer.position.lat, racer.position.lon, latest.lat, latest.lon))} from active` : '';
+      const staleLabel = stale ? ` · stale >${sourceStaleThresholdMin(source.type)} min` : '';
+      const errorLabel = source.lastError && !latest ? `error: ${source.lastError}` : '';
+      const status = latest ? `${formatUpdatedTime(latest)}${staleLabel}${distance}` : errorLabel || 'no data yet';
       const color = active ? '#16a34a' : stale ? '#b45309' : latest ? '#475569' : '#991b1b';
       const label = sourceDisplayLabel(source);
       return `<div style="margin-top:2px"><span style="display:inline-block;width:.65em;height:.65em;border-radius:50%;background:${color};margin-right:4px"></span><b>${escapeHtml(label)}</b>${active ? ' · active' : ''} · ${escapeHtml(status)}</div>`;
@@ -770,12 +772,51 @@
   }
 
   function updateRacerFromSourceCache(racer) {
-    const positions = racer.sources.map((source) => source.latestPosition).filter(Boolean).map(clonePosition);
-    positions.sort((a, b) => (b.utcMs || 0) - (a.utcMs || 0));
-    const latest = positions[0] || null;
+    const candidates = racer.sources
+      .filter((source) => source.latestPosition)
+      .map((source) => ({ source, position: clonePosition(source.latestPosition), stale: isSourcePositionStale(source, source.latestPosition) }));
+    const best = chooseBestSourceCandidate(candidates);
+    const latest = best?.position || null;
     if (latest) latest.history = mergePositionHistory(racer.position, latest);
     racer.position = latest;
-    racer.error = positions.length ? '' : racer.error;
+    racer.sourceConflict = latest ? detectSourceConflict(best, candidates) : null;
+    racer.error = candidates.length ? '' : racer.error;
+  }
+
+  function chooseBestSourceCandidate(candidates) {
+    const valid = candidates.filter((item) => Number.isFinite(item.position?.lat) && Number.isFinite(item.position?.lon));
+    const fresh = valid.filter((item) => !item.stale);
+    const pool = fresh.length ? fresh : valid;
+    pool.sort((a, b) => (b.position.utcMs || 0) - (a.position.utcMs || 0));
+    return pool[0] || null;
+  }
+
+  function isSourcePositionStale(source, position) {
+    const age = staleMinutes(position);
+    return age != null && age > sourceStaleThresholdMin(source?.type || position?.sourceType);
+  }
+
+  function sourceStaleThresholdMin(type) {
+    return SOURCE_STALE_MIN[type] || STALE_AFTER_MIN;
+  }
+
+  function detectSourceConflict(active, candidates) {
+    if (!active?.position) return null;
+    const fresh = candidates.filter((item) => item !== active && item.position && !item.stale);
+    let worst = null;
+    for (const item of fresh) {
+      const d = distanceM(active.position.lat, active.position.lon, item.position.lat, item.position.lon);
+      if (d > SOURCE_CONFLICT_DISTANCE_M && (!worst || d > worst.distanceM)) worst = { source: item.source, position: item.position, distanceM: d };
+    }
+    if (!worst) return null;
+    const activeLabel = sourceDisplayLabel(active.source);
+    const otherLabel = sourceDisplayLabel(worst.source);
+    return {
+      activeType: active.source.type,
+      otherType: worst.source.type,
+      distanceM: worst.distanceM,
+      message: `${otherLabel} is ${formatDistance(worst.distanceM)} from ${activeLabel}`,
+    };
   }
 
   function indexFlymasterSources() {
@@ -1232,7 +1273,7 @@
     const r = state.racer;
     if (!r) return;
     const stale = staleMinutes(r);
-    setText('racer-status', r.gpsFix === 'False' ? 'no GPS fix' : stale != null && stale > STALE_AFTER_MIN ? `stale ${Math.round(stale)} min` : 'live');
+    setText('racer-status', r.gpsFix === 'False' ? 'no GPS fix' : isPositionStale(r) ? `stale ${Math.round(stale)} min` : 'live');
     setText('speed', r.speedText || '—');
     setText('elevation', formatElevation(r.ele));
     if (state.me) {
@@ -1523,7 +1564,7 @@
 
   function updateRacePanel() {
     const positions = racePositions();
-    const stale = positions.filter((r) => staleMinutes(r) != null && staleMinutes(r) > STALE_AFTER_MIN).length;
+    const stale = positions.filter(isPositionStale).length;
     const selected = selectedRacePositions();
     setText('racer-status', `${positions.length}/${state.racers.length} live`);
     setText('speed', state.selectedRacerIds.size ? `${selected.length} selected` : 'all');
@@ -1984,6 +2025,7 @@
     return `${days} d ago`;
   }
   function staleMinutes(r) { return r.utcMs ? (Date.now() - r.utcMs) / 60000 : null; }
+  function isPositionStale(position) { const age = staleMinutes(position); return age != null && age > sourceStaleThresholdMin(position?.sourceType); }
   function formatDistance(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
   function formatKm(m) { return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
   function formatElevation(m) { return m == null ? '—' : `${Math.round(m)} m`; }

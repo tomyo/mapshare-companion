@@ -75,7 +75,7 @@ Racers tab:
 Name | GarminLink | SPOT | FlymasterId | UseMapFeatures | Notes
 ```
 
-`GarminLink` / `Garmin` / `MapShare` columns, `SPOT` / `SpotLink` / `SpotId` columns, and `FlymasterId` columns are supported. If `Config.FlymasterGroup` is present, the app connects once to that Flymaster group and maps live Flymaster positions to racers by `FlymasterId`. If a racer has multiple supported source columns, the app fetches all of them and uses the newest valid position. Set `UseMapFeatures` to `true` on one racer to use that racer's Garmin routes/waypoints/history as the race map features.
+`GarminLink` / `Garmin` / `MapShare` columns, `SPOT` / `SpotLink` / `SpotId` columns, and `FlymasterId` columns are supported. If `Config.FlymasterGroup` is present, the app connects once to that Flymaster group and maps live Flymaster positions to racers by `FlymasterId`. If a racer has multiple supported source columns, the app fetches all of them and uses the newest non-stale position; racer popups show per-source diagnostics and source-conflict warnings.
 
 Generic usage pattern:
 
