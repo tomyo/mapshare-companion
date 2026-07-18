@@ -9,7 +9,7 @@ The primary deliverable is a standalone Vercel webapp. The launcher can enter th
 - distance and bearing from you to the racer
 - racer speed, course, GPS fix, elevation, and last update
 - Street/topographic map with both markers and a connecting line
-- solo Garmin/SPOT tracking, or multi-racer Garmin/SPOT race rosters from Google Sheets
+- solo Garmin/SPOT tracking, multi-racer Garmin/SPOT race rosters from Google Sheets, or Flymaster live groups
 - Garmin MapShare waypoints and routes from `/<mapshare-name>/Waypoints` and `/<mapshare-name>/routes/`
 - any track/history points present in the public KML feed
 - quick header refresh button plus controls for Fit both, Racer, Me, Street/Topo map toggle, and Hide/Show KML
@@ -88,6 +88,14 @@ It also registers as a Web Share Target: share a Garmin MapShare URL such as `ht
 
 Browsers do not let unrelated PWAs directly hijack normal `https://share.garmin.com/...` link clicks; sharing the Garmin link to the installed app is the supported path.
 
+Flymaster group mode can follow public Flymaster Live Tracking groups, for example:
+
+```text
+https://mapshare-companion.vercel.app/race/flymaster/7801
+```
+
+It connects to Flymaster's live WebSocket for group positions and uses `/api/flymaster` for group metadata/history proxying.
+
 The app uses Edge Function proxies:
 
 ```text
@@ -97,6 +105,8 @@ The app uses Edge Function proxies:
 /api/garmin?name=<mapshare-name>&type=routes
 /api/garmin?name=<mapshare-name>&type=collections
 /api/spot?id=<spot-feed-id>&type=message
+/api/flymaster?type=group&grp=<group-id>
+/api/flymaster?type=trace&grp=<group-id>&p=<pilot-sn>&d=<flymaster-timestamp>
 ```
 
 That avoids Garmin/SPOT CORS problems and works directly in Chrome mobile without bookmarklets.

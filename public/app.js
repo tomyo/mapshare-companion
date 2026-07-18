@@ -12,6 +12,8 @@
   const REFRESH_MS = 60000;
   const SPOT_REFRESH_MS = 150000;
   const STALE_AFTER_MIN = 15;
+  const FLYMASTER_WS_URL = 'wss://lb.flymaster.net:8081';
+  const FLYMASTER_EPOCH_MS = Date.UTC(2000, 0, 1);
 
   const $ = (id) => document.getElementById(id);
   const state = {
@@ -52,6 +54,7 @@
     importedKml: null,
     kmlVisible: true,
     firstFitDone: false,
+    flymaster: null,
   };
 
   $('setup-form').addEventListener('submit', (event) => {
@@ -137,6 +140,12 @@
     return;
   }
 
+  const flymasterRace = parseFlymasterRaceParams(launchParams, location.pathname);
+  if (flymasterRace) {
+    startRaceFromFlymaster(flymasterRace);
+    return;
+  }
+
   const raceSheet = parseRaceSheetParams(launchParams, location.pathname);
   if (raceSheet) {
     startRaceFromSheet(raceSheet);
@@ -160,6 +169,7 @@
   }
 
   async function startSolo(source) {
+    disconnectFlymasterGroup();
     state.soloSource = source;
     state.mapName = source.type === 'garmin-mapshare' ? source.name : '';
     $('setup').classList.add('hidden');
@@ -177,6 +187,7 @@
   }
 
   async function startRaceFromSheet(spec) {
+    disconnectFlymasterGroup();
     state.raceMode = true;
     updateRaceSwitchMenu();
     $('setup').classList.add('hidden');
@@ -199,6 +210,43 @@
     } catch (err) {
       console.error(err);
       setText('racer-status', 'race error');
+      setText('info', err.message || String(err));
+    }
+  }
+
+  async function startRaceFromFlymaster(spec) {
+    disconnectFlymasterGroup();
+    state.raceMode = true;
+    updateRaceSwitchMenu();
+    $('setup').classList.add('hidden');
+    $('tracker').classList.remove('hidden');
+    updateHeader('Loading Flymaster…');
+    if (!state.map) initMap();
+    startOwnLocation();
+    const race = { id: `flymaster:${spec.groupId}`, name: spec.name || `Flymaster group ${spec.groupId}`, racers: [], sourceFeatureSource: null, flymasterGroupId: spec.groupId };
+    state.race = race;
+    state.racers = race.racers;
+    state.sourceFeatureSource = null;
+    state.selectedRacerIds = loadSelectedRacers(race.id);
+    state.visibleRaceTrackIds = loadVisibleRaceTracks(race.id);
+    try {
+      const info = await fetchJson(flymasterApiUrl('group', { grp: spec.groupId }));
+      if (!spec.name && info?.name) race.name = info.name;
+      const lat = Number(info?.center_lat);
+      const lon = Number(info?.center_lon);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) state.map.setView([lat, lon], Number(info?.gZoom) || 8);
+    } catch (err) {
+      console.warn('Flymaster group metadata failed', err);
+    }
+    updateHeader();
+    updateFitButton();
+    try {
+      await refreshAll();
+      clearInterval(state.refreshTimer);
+      state.refreshTimer = setInterval(refreshAll, REFRESH_MS);
+    } catch (err) {
+      console.error(err);
+      setText('racer-status', 'Flymaster error');
       setText('info', err.message || String(err));
     }
   }
@@ -262,6 +310,7 @@
   }
 
   async function refreshRaceRacers() {
+    if (state.race?.flymasterGroupId) return refreshFlymasterRace();
     if (!state.racers.length) return;
     setText('racer-status', 'refreshing…');
     await Promise.allSettled(state.racers.map(refreshRaceRacer));
@@ -463,6 +512,12 @@
     return `/api/spot?id=${encodeURIComponent(id)}&type=message`;
   }
 
+  function flymasterApiUrl(type, params = {}) {
+    const query = new URLSearchParams({ type, _: String(Date.now()) });
+    for (const [key, value] of Object.entries(params)) query.set(key, String(value));
+    return `/api/flymaster?${query}`;
+  }
+
   async function fetchText(url) {
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -473,6 +528,245 @@
     const res = await fetch(url, { cache: 'no-store', headers: { accept: 'application/json' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
+  }
+
+  async function refreshFlymasterRace() {
+    const groupId = state.race?.flymasterGroupId;
+    if (!groupId) return;
+    setText('racer-status', state.flymaster?.connected ? 'Flymaster live' : 'connecting…');
+    try {
+      await connectFlymasterGroup(groupId);
+    } catch (err) {
+      console.warn('Flymaster connection failed', err);
+      setText('info', err.message || String(err));
+    }
+    updateFlymasterRaceView();
+  }
+
+  function connectFlymasterGroup(groupId) {
+    const existing = state.flymaster;
+    if (existing?.groupId === groupId && existing.ws && existing.ws.readyState <= WebSocket.OPEN) {
+      return existing.firstDataPromise || Promise.resolve();
+    }
+    disconnectFlymasterGroup();
+    const fm = {
+      groupId,
+      ws: null,
+      pilots: new Map(),
+      connected: false,
+      lastMessageAt: 0,
+      renderPending: false,
+      reconnectTimer: null,
+      firstDataDone: false,
+      firstDataResolve: null,
+      firstDataReject: null,
+      firstDataPromise: null,
+    };
+    fm.firstDataPromise = new Promise((resolve, reject) => {
+      fm.firstDataResolve = resolve;
+      fm.firstDataReject = reject;
+      setTimeout(() => {
+        if (!fm.firstDataDone) reject(new Error('Timed out waiting for Flymaster data.'));
+      }, 15000);
+    });
+    state.flymaster = fm;
+    openFlymasterSocket(fm);
+    return fm.firstDataPromise;
+  }
+
+  function openFlymasterSocket(fm) {
+    if (typeof WebSocket !== 'function') throw new Error('This browser does not support WebSockets.');
+    if (!window.msgpack?.decode) throw new Error('Flymaster MessagePack decoder did not load.');
+    const ws = new WebSocket(FLYMASTER_WS_URL);
+    fm.ws = ws;
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => {
+      fm.connected = true;
+      ws.send(JSON.stringify({ group_id: Number(fm.groupId), d: 0 }));
+      updateFlymasterRaceView();
+    };
+    ws.onmessage = async (event) => {
+      try {
+        const data = await decodeFlymasterMessage(event.data);
+        if (!data) return;
+        fm.lastMessageAt = Date.now();
+        handleFlymasterMessage(fm, data);
+        if (!fm.firstDataDone) {
+          fm.firstDataDone = true;
+          fm.firstDataResolve();
+        }
+      } catch (err) {
+        console.warn('Flymaster message decode failed', err);
+      }
+    };
+    ws.onerror = () => {
+      if (!fm.firstDataDone) fm.firstDataReject(new Error('Flymaster WebSocket error.'));
+    };
+    ws.onclose = () => {
+      fm.connected = false;
+      if (state.flymaster !== fm) return;
+      updateFlymasterRaceView();
+      if (!fm.reconnectTimer) {
+        fm.reconnectTimer = setTimeout(() => {
+          fm.reconnectTimer = null;
+          if (state.flymaster === fm) openFlymasterSocket(fm);
+        }, 5000);
+      }
+    };
+  }
+
+  function disconnectFlymasterGroup() {
+    const fm = state.flymaster;
+    if (!fm) return;
+    if (fm.reconnectTimer) clearTimeout(fm.reconnectTimer);
+    try { fm.ws?.close(); } catch (_) {}
+    state.flymaster = null;
+  }
+
+  async function decodeFlymasterMessage(data) {
+    if (data instanceof ArrayBuffer) return window.msgpack.decode(new Uint8Array(data));
+    if (data instanceof Blob) return window.msgpack.decode(new Uint8Array(await data.arrayBuffer()));
+    if (typeof data === 'string') return JSON.parse(data);
+    return null;
+  }
+
+  function handleFlymasterMessage(fm, data) {
+    if (data.type === 'pilot_list' && Array.isArray(data.pilots)) {
+      for (const pilot of data.pilots) {
+        const sn = String(pilot.sn || '').trim();
+        if (!sn) continue;
+        fm.pilots.set(sn, pilot);
+        const racer = upsertFlymasterRacer(sn, pilot.nm);
+        const position = flymasterPositionFromPilot(pilot, racer.name, fm.groupId);
+        if (position) applyFlymasterPosition(racer, position);
+      }
+      state.racers.sort((a, b) => a.name.localeCompare(b.name));
+      scheduleFlymasterRaceRender(fm);
+    } else if (data.type === 'tick' && Array.isArray(data.markers)) {
+      for (const marker of data.markers) {
+        const sn = String(marker[1] || '').trim();
+        if (!sn) continue;
+        const pilot = fm.pilots.get(sn);
+        const racer = upsertFlymasterRacer(sn, pilot?.nm);
+        const position = flymasterPositionFromMarker(marker, racer.name, fm.groupId);
+        if (position) applyFlymasterPosition(racer, position);
+      }
+      scheduleFlymasterRaceRender(fm);
+    }
+  }
+
+  function upsertFlymasterRacer(sn, name) {
+    const id = `flymaster-${sn}`;
+    let racer = state.racers.find((item) => item.id === id);
+    const cleanName = String(name || '').trim() || `Flymaster ${sn}`;
+    if (!racer) {
+      racer = { id, name: cleanName, sources: [{ type: 'flymaster', label: 'Flymaster', id: sn, groupId: state.race?.flymasterGroupId || '' }], unsupportedSources: [], position: null, error: '' };
+      state.racers.push(racer);
+    } else if (cleanName && racer.name !== cleanName && /^Flymaster \d+$/.test(racer.name)) {
+      racer.name = cleanName;
+    }
+    return racer;
+  }
+
+  function flymasterPositionFromPilot(pilot, name, groupId) {
+    const lat = Number(pilot.a);
+    const lon = Number(pilot.o);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    const ele = numberOrNull(pilot.h);
+    const terrain = numberOrNull(pilot.s);
+    const agl = ele != null && terrain != null ? ele - terrain : null;
+    return makeFlymasterPosition({
+      id: pilot.sn,
+      name,
+      groupId,
+      lat,
+      lon,
+      ele,
+      agl,
+      speed: numberOrNull(pilot.v),
+      course: numberOrNull(pilot.b),
+      stamp: numberOrNull(pilot.d),
+    });
+  }
+
+  function flymasterPositionFromMarker(marker, name, groupId) {
+    const lat = Number(marker[2]) / 60000;
+    const lon = Number(marker[3]) / 60000;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return makeFlymasterPosition({
+      id: marker[1],
+      name,
+      groupId,
+      lat,
+      lon,
+      ele: numberOrNull(marker[4]),
+      agl: numberOrNull(marker[5]),
+      speed: numberOrNull(marker[6]),
+      course: numberOrNull(marker[7]),
+      stamp: numberOrNull(marker[11]),
+    });
+  }
+
+  function makeFlymasterPosition(data) {
+    const utcMs = flymasterUtcMs(data.stamp);
+    const aglText = data.agl != null && data.agl >= 0 ? `AGL: ${Math.round(data.agl)} m` : '';
+    return {
+      id: String(data.id || ''),
+      name: data.name || 'Flymaster',
+      lat: data.lat,
+      lon: data.lon,
+      ele: data.ele,
+      aglM: data.agl,
+      speedText: data.speed != null && data.speed >= 0 ? `${Math.round(data.speed)} km/h` : '—',
+      speedKmh: data.speed ?? NaN,
+      courseText: data.course != null ? `${Math.round(data.course)}°` : '—',
+      courseDeg: data.course ?? NaN,
+      time: formatFlymasterTime(utcMs),
+      timeUtc: formatFlymasterTime(utcMs),
+      utcMs,
+      gpsFix: '',
+      emergency: '',
+      text: aglText,
+      sourceLabel: 'Flymaster',
+      sourceName: `grp ${data.groupId}`,
+      sourceType: 'flymaster',
+    };
+  }
+
+  function applyFlymasterPosition(racer, position) {
+    position.history = mergePositionHistory(racer.position, position).slice(-1500);
+    racer.position = position;
+    racer.error = '';
+  }
+
+  function scheduleFlymasterRaceRender(fm) {
+    if (fm.renderPending) return;
+    fm.renderPending = true;
+    requestAnimationFrame(() => {
+      fm.renderPending = false;
+      if (state.flymaster === fm) updateFlymasterRaceView();
+    });
+  }
+
+  function updateFlymasterRaceView() {
+    renderRaceRacers();
+    updatePanel();
+    updateConnector();
+    maybeInitialFit();
+  }
+
+  function flymasterUtcMs(seconds) {
+    const raw = Number(seconds);
+    return Number.isFinite(raw) && raw > 0 ? FLYMASTER_EPOCH_MS + raw * 1000 : 0;
+  }
+
+  function formatFlymasterTime(utcMs) {
+    return utcMs ? new Date(utcMs).toISOString().replace('T', ' ').replace('.000Z', ' UTC') : '';
+  }
+
+  function numberOrNull(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
   }
 
   function parseKml(xmlText) {
@@ -1095,6 +1389,7 @@
     const parts = [];
     if (counts['garmin-mapshare']) parts.push(`${counts['garmin-mapshare']} Garmin`);
     if (counts.spot) parts.push(`${counts.spot} SPOT`);
+    if (counts.flymaster) parts.push(`${counts.flymaster} Flymaster`);
     return parts.length ? parts.join(', ') : '0';
   }
 
@@ -1108,6 +1403,13 @@
   function centerRacer() { if (state.raceMode) return fitRaceTargets(); if (state.racer) state.map.setView([state.racer.lat, state.racer.lon], Math.max(state.map.getZoom(), 15)); }
   function centerMe() { if (state.me) state.map.setView([state.me.lat, state.me.lon], Math.max(state.map.getZoom(), 15)); }
   function maybeInitialFit() { if (state.raceMode) { if (!state.firstFitDone && racePositions().length) { fitRaceTargets(); state.firstFitDone = true; } return; } if (!state.firstFitDone && state.racer && state.me) { fitBoth(); state.firstFitDone = true; } else if (!state.firstFitDone && state.racer) centerRacer(); }
+
+  function parseFlymasterRaceParams(params, pathname) {
+    const pathGroup = pathname.match(/^\/race\/flymaster\/(\d{1,10})$/)?.[1] || '';
+    const raw = pathGroup || params.get('flymasterGroup') || params.get('flymaster') || params.get('grp') || '';
+    if (!/^\d{1,10}$/.test(raw)) return null;
+    return { groupId: raw, name: params.get('race') || params.get('raceName') || '' };
+  }
 
   function parseRaceSheetParams(params, pathname) {
     if (pathname === TRANSCAPIXABA_PATH) return { id: '1h-iNS8rby-P8WkEKP98rxMRpEMdOrUjznQxjr9weH8g', gid: '0', name: 'Transcapixaba 2026', start: TRANSCAPIXABA_START, end: TRANSCAPIXABA_END };
@@ -1352,7 +1654,7 @@
   function formatKm(m) { return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
   function formatElevation(m) { return m == null ? '—' : `${Math.round(m)} m`; }
   function accuracyStyle(accuracy) { return { radius: accuracy || 0, color: '#1a73e8', weight: 2, opacity: 0.65, fillColor: '#1a73e8', fillOpacity: 0.12, interactive: false }; }
-  function sourceTypeLabel(type) { return type === 'spot' ? 'SPOT' : type === 'garmin-mapshare' ? 'Garmin' : 'source'; }
+  function sourceTypeLabel(type) { return type === 'flymaster' ? 'Flymaster' : type === 'spot' ? 'SPOT' : type === 'garmin-mapshare' ? 'Garmin' : 'source'; }
   function distanceM(lat1, lon1, lat2, lon2) { const R = 6371000, p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180, dp = (lat2 - lat1) * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180; const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); }
   function bearingDeg(lat1, lon1, lat2, lon2) { const p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180; const y = Math.sin(dl) * Math.cos(p2); const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl); return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360; }
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
