@@ -115,7 +115,7 @@
     return;
   }
 
-  const raceSheet = parseRaceSheetParams(launchParams);
+  const raceSheet = parseRaceSheetParams(launchParams, location.pathname);
   if (raceSheet) {
     startRaceFromSheet(raceSheet);
     return;
@@ -820,7 +820,8 @@
   function centerMe() { if (state.me) state.map.setView([state.me.lat, state.me.lon], Math.max(state.map.getZoom(), 15)); }
   function maybeInitialFit() { if (state.raceMode) { if (!state.firstFitDone && racePositions().length) { fitRaceTargets(); state.firstFitDone = true; } return; } if (!state.firstFitDone && state.racer && state.me) { fitBoth(); state.firstFitDone = true; } else if (!state.firstFitDone && state.racer) centerRacer(); }
 
-  function parseRaceSheetParams(params) {
+  function parseRaceSheetParams(params, pathname) {
+    if (pathname === '/transcapixaba-2026') return { id: '1h-iNS8rby-P8WkEKP98rxMRpEMdOrUjznQxjr9weH8g', gid: '0', name: 'Transcapixaba 2026' };
     const raw = params.get('raceSheet') || params.get('sheet') || params.get('sheetId') || '';
     if (!raw) return null;
     const parsed = parseGoogleSheetRef(raw);
@@ -867,7 +868,7 @@
   function parseGarminSource(value, label) {
     const raw = String(value || '').trim();
     const isGarminLabel = /garmin|mapshare|inreach/i.test(label || '');
-    if (/share\.garmin\.com/i.test(raw)) return parseMapName(raw);
+    if (/share\.garmin\.com/i.test(raw) || /live\.garmin\.com/i.test(raw)) return parseMapName(raw);
     if (isGarminLabel && /^[A-Za-z0-9_-]{1,100}$/.test(raw)) return raw;
     return '';
   }
@@ -937,7 +938,7 @@
       const parts = u.pathname.split('/').filter(Boolean);
       const lowerParts = parts.map((part) => part.toLowerCase());
       let name = '';
-      if (lowerParts[0] === 'feed' && lowerParts[1] === 'share') name = parts[2] || '';
+      if (lowerParts[0] === 'feed' && (lowerParts[1] === 'share' || lowerParts[1] === 'shareloader')) name = parts[2] || '';
       else name = parts[0] || '';
       return sanitizeName(name);
     } catch (_) {
