@@ -52,7 +52,7 @@ Production deployment:
 ```text
 https://mapshare-companion.vercel.app/          # asks for username / shared URL
 https://mapshare-companion.vercel.app/nhayes
-https://mapshare-companion.vercel.app/transcapixaba-2026
+https://mapshare-companion.vercel.app/race/transcapixaba-2026
 https://mapshare-companion.vercel.app/?sheet=<google-sheet-id>&gid=0
 ```
 

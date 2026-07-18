@@ -821,7 +821,7 @@
   function maybeInitialFit() { if (state.raceMode) { if (!state.firstFitDone && racePositions().length) { fitRaceTargets(); state.firstFitDone = true; } return; } if (!state.firstFitDone && state.racer && state.me) { fitBoth(); state.firstFitDone = true; } else if (!state.firstFitDone && state.racer) centerRacer(); }
 
   function parseRaceSheetParams(params, pathname) {
-    if (pathname === '/transcapixaba-2026') return { id: '1h-iNS8rby-P8WkEKP98rxMRpEMdOrUjznQxjr9weH8g', gid: '0', name: 'Transcapixaba 2026' };
+    if (pathname === '/race/transcapixaba-2026') return { id: '1h-iNS8rby-P8WkEKP98rxMRpEMdOrUjznQxjr9weH8g', gid: '0', name: 'Transcapixaba 2026' };
     const raw = params.get('raceSheet') || params.get('sheet') || params.get('sheetId') || '';
     if (!raw) return null;
     const parsed = parseGoogleSheetRef(raw);
@@ -913,7 +913,9 @@
   function slugify(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80); }
 
   function parseMapNameFromPath() {
-    const first = location.pathname.split('/').filter(Boolean)[0] || '';
+    const parts = location.pathname.split('/').filter(Boolean);
+    if (parts[0] === 'race') return '';
+    const first = parts[0] || '';
     return first && first !== 'api' ? sanitizeName(first) : '';
   }
 

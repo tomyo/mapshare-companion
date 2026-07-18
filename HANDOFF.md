@@ -40,7 +40,7 @@ https://share.garmin.com/nhayes
   - `/<mapshare-name>`
   - `?map=<mapshare-name>`
 - Hardcoded race routes auto-start:
-  - `/transcapixaba-2026`
+  - `/race/transcapixaba-2026`
 - Google Sheet race rosters load with `?sheet=<google-sheet-id-or-url>&gid=<gid>`. The first row is treated as headers when Google's gviz response does not provide column labels. Expected columns are a racer name column (`Name`, `Racer`, `Pilot`, etc.) plus source columns such as `GarminLink`, `GsmLink`, `FlymasterLink`. For now only Garmin/MapShare sources are actively fetched; unknown source columns are retained on the racer object for future providers.
 - In sheet race mode, each racer can have multiple Garmin source columns. The app refreshes all supported Garmin sources and uses the newest valid position per racer.
 - The normalized MapShare name is stored in `localStorage` under `garminRaceTracker.mapName`.
