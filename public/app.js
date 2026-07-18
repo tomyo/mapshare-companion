@@ -7,6 +7,7 @@
   const SOURCE_FEATURES_KEY = 'garminRaceTracker.sourceFeaturesVisible';
   const TRANSCAPIXABA_PATH = '/race/transcapixaba-2026';
   const REFRESH_MS = 60000;
+  const SPOT_REFRESH_MS = 150000;
   const STALE_AFTER_MIN = 15;
 
   const $ = (id) => document.getElementById(id);
@@ -255,18 +256,62 @@
   }
 
   async function refreshRaceRacer(racer) {
-    const garminSources = racer.sources.filter((source) => source.type === 'garmin-mapshare');
-    const results = await Promise.allSettled(garminSources.map(async (source) => {
-      const position = parseKml(await fetchText(apiUrlForName(source.name, 'feed')));
-      if (!position) throw new Error('No position');
-      return Object.assign(position, { racerId: racer.id, name: racer.name, sourceLabel: source.label, sourceName: source.name });
-    }));
+    const results = await Promise.allSettled(racer.sources.map((source) => refreshRacerSource(racer, source)));
     const positions = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
     positions.sort((a, b) => (b.utcMs || 0) - (a.utcMs || 0));
     const latest = positions[0] || null;
     if (latest) latest.history = mergePositionHistory(racer.position, latest);
     racer.position = latest;
     racer.error = positions.length ? '' : (results.find((r) => r.status === 'rejected')?.reason?.message || 'No supported source position');
+  }
+
+  async function refreshRacerSource(racer, source) {
+    let position = null;
+    if (source.type === 'garmin-mapshare') {
+      position = parseKml(await fetchText(apiUrlForName(source.name, 'feed')));
+      if (!position) throw new Error(`No Garmin position for ${source.name}`);
+    } else if (source.type === 'spot') {
+      position = await fetchSpotPosition(source);
+      if (!position) throw new Error(`No SPOT position for ${source.id}`);
+    } else {
+      throw new Error(`Unsupported source: ${source.type || 'unknown'}`);
+    }
+    return Object.assign(clonePosition(position), {
+      racerId: racer.id,
+      name: racer.name,
+      sourceLabel: source.label,
+      sourceName: source.name || source.id || '',
+      sourceType: source.type,
+    });
+  }
+
+  async function fetchSpotPosition(source) {
+    const now = Date.now();
+    if (source.spotFetchedAt && now - source.spotFetchedAt < SPOT_REFRESH_MS) {
+      if (source.spotPosition) return clonePosition(source.spotPosition);
+      throw new Error(source.spotError || 'No recent SPOT position');
+    }
+    if (source.spotInFlight) return clonePosition(await source.spotInFlight);
+    source.spotInFlight = fetchJson(spotApiUrl(source.id)).then((data) => {
+      const position = parseSpotFeed(data, source.id);
+      if (!position) throw new Error('No SPOT position');
+      source.spotPosition = clonePosition(position);
+      source.spotError = '';
+      return position;
+    }).catch((err) => {
+      source.spotPosition = null;
+      source.spotError = err?.message || String(err);
+      throw err;
+    }).finally(() => {
+      source.spotFetchedAt = Date.now();
+      source.spotInFlight = null;
+    });
+    return clonePosition(await source.spotInFlight);
+  }
+
+  function clonePosition(position) {
+    if (!position) return position;
+    return Object.assign({}, position, { history: position.history ? position.history.map((p) => Object.assign({}, p)) : position.history });
   }
 
   function renderRaceRacers() {
@@ -307,10 +352,10 @@
     const selected = state.selectedRacerIds.has(racer.id);
     const trackVisible = state.visibleRaceTrackIds.has(racer.id);
     const hasTrack = !!(r.history && r.history.length > 1);
-    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(r.time || r.timeUtc || '—')}<br>Source: ${escapeHtml(r.sourceLabel || r.sourceName || 'Garmin')}`;
+    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(r.time || r.timeUtc || '—')}<br>Source: ${escapeHtml(r.sourceLabel || r.sourceName || sourceTypeLabel(r.sourceType))}`;
     const trackButton = hasTrack
       ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>`
-      : '<button type="button" disabled title="Garmin has not published enough history points for this racer yet">No track yet</button>';
+      : '<button type="button" disabled title="The tracking source has not published enough history points for this racer yet">No track yet</button>';
     return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button>${trackButton}</div>`;
   }
 
@@ -364,6 +409,10 @@
     return `/api/garmin?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&_=${Date.now()}`;
   }
 
+  function spotApiUrl(id) {
+    return `/api/spot?id=${encodeURIComponent(id)}&type=message`;
+  }
+
   async function fetchText(url) {
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -403,6 +452,67 @@
     return dedupeLatLon(points);
   }
 
+  function parseSpotFeed(data, fallbackName) {
+    const root = data?.feedMessageResponse || data?.response?.feedMessageResponse || data?.response || data || {};
+    const feedName = root.feed?.name || fallbackName || 'SPOT';
+    const messageNode = root.messages?.message;
+    const messages = Array.isArray(messageNode) ? messageNode : (messageNode ? [messageNode] : []);
+    const points = messages.map((message) => parseSpotMessage(message, feedName)).filter(Boolean);
+    points.sort((a, b) => {
+      const at = a.utcMs || 0;
+      const bt = b.utcMs || 0;
+      if (at !== bt) return bt - at;
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
+    });
+    const latest = points[0] || null;
+    if (latest) latest.history = dedupeLatLon(points.slice().reverse());
+    return latest;
+  }
+
+  function parseSpotMessage(message, feedName) {
+    const lat = Number(message.latitude);
+    const lon = Number(message.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    const ele = Number.parseFloat(message.altitude ?? '');
+    const utcMs = parseSpotUtc(message);
+    const messageType = String(message.messageType || '').trim();
+    const messageContent = String(message.messageContent || '').trim();
+    const battery = String(message.batteryState || '').trim();
+    const details = [messageType, messageContent, battery ? `Battery: ${battery}` : ''].filter(Boolean).join(' · ');
+    return {
+      id: String(message.id || ''),
+      name: message.messengerName || feedName || 'SPOT',
+      lat,
+      lon,
+      ele: Number.isFinite(ele) ? ele : null,
+      speedText: '—',
+      speedKmh: NaN,
+      courseText: '—',
+      courseDeg: NaN,
+      time: spotTimeText(message, utcMs),
+      timeUtc: spotTimeText(message, utcMs),
+      utcMs,
+      gpsFix: '',
+      emergency: /(help|sos|911)/i.test(messageType) ? 'True' : '',
+      text: details,
+      messageType,
+      batteryState: battery,
+    };
+  }
+
+  function parseSpotUtc(message) {
+    const unixTime = Number(message.unixTime);
+    if (Number.isFinite(unixTime) && unixTime > 0) return unixTime * 1000;
+    const raw = String(message.dateTime || '').trim().replace(/([+-]\d{2})(\d{2})$/, '$1:$2');
+    return raw ? Date.parse(raw) || 0 : 0;
+  }
+
+  function spotTimeText(message, utcMs) {
+    const raw = String(message.dateTime || '').trim();
+    if (raw) return raw.replace('T', ' ').replace(/\+0000$/, ' UTC');
+    return utcMs ? new Date(utcMs).toISOString().replace('T', ' ').replace('.000Z', ' UTC') : '';
+  }
+
   function parseKmlCoordinateObjects(text) {
     return String(text || '').trim().split(/\s+/).map((chunk) => {
       const [lon, lat, ele] = chunk.split(',').map(Number);
@@ -417,7 +527,7 @@
     else if (previous) history.push(previous);
     if (next?.history?.length) history.push(...next.history);
     else if (next) history.push(next);
-    return dedupeLatLon(history);
+    return dedupePositionHistory(history);
   }
 
   function parsePlacemark(pm) {
@@ -882,7 +992,7 @@
       setText('range', `${formatDistance(d)} · ${Math.round(b)}°`);
     } else setText('range', state.me ? 'no racers' : 'waiting GPS');
     const featureSource = state.sourceFeatureSource ? ` · map features from ${state.sourceFeatureSource.racerName}` : '';
-    setText('info', `Race: ${state.race?.name || '—'} · ${state.racers.length} racers · ${supportedSourceCount()} Garmin sources${featureSource}`);
+    setText('info', `Race: ${state.race?.name || '—'} · ${state.racers.length} racers · ${supportedSourceSummary()} sources${featureSource}`);
     updateFitButton();
   }
 
@@ -918,7 +1028,16 @@
     $('center-racer').textContent = state.raceMode ? 'Racers' : 'Racer';
   }
 
-  function supportedSourceCount() { return state.racers.reduce((sum, racer) => sum + racer.sources.filter((s) => s.type === 'garmin-mapshare').length, 0); }
+  function supportedSourceSummary() {
+    const counts = state.racers.reduce((acc, racer) => {
+      for (const source of racer.sources) acc[source.type] = (acc[source.type] || 0) + 1;
+      return acc;
+    }, {});
+    const parts = [];
+    if (counts['garmin-mapshare']) parts.push(`${counts['garmin-mapshare']} Garmin`);
+    if (counts.spot) parts.push(`${counts.spot} SPOT`);
+    return parts.length ? parts.join(', ') : '0';
+  }
 
   function fitBoth() {
     if (state.raceMode) return fitRaceTargets();
@@ -956,7 +1075,7 @@
   async function loadRaceFromSheet(spec) {
     const rows = await getSheetData(spec.id, spec.gid);
     const racers = rows.map(rowToRacer).filter(Boolean);
-    if (!racers.length) throw new Error('No racers with Garmin sources found in sheet.');
+    if (!racers.length) throw new Error('No racers with supported sources found in sheet.');
     return { id: `sheet:${spec.id}:${spec.gid}`, name: spec.name || 'Race sheet', racers, sourceFeatureSource: findSourceFeatureSource(racers) };
   }
 
@@ -979,7 +1098,9 @@
     for (const [label, value] of Object.entries(row)) {
       if (!value || reserved.has(normalizeHeader(label))) continue;
       const garminName = parseGarminSource(value, label);
+      const spotId = parseSpotSource(value, label);
       if (garminName) sources.push({ type: 'garmin-mapshare', label, name: garminName, raw: String(value).trim() });
+      else if (spotId) sources.push({ type: 'spot', label, id: spotId, raw: String(value).trim() });
       else unsupportedSources.push({ type: 'unknown', label, raw: String(value).trim() });
     }
     if (!sources.length && !unsupportedSources.length) return null;
@@ -991,6 +1112,32 @@
     const isGarminLabel = /garmin|mapshare|inreach/i.test(label || '');
     if (/share\.garmin\.com/i.test(raw) || /live\.garmin\.com/i.test(raw)) return parseMapName(raw);
     if (isGarminLabel && /^[A-Za-z0-9_-]{1,100}$/.test(raw)) return raw;
+    return '';
+  }
+
+  function parseSpotSource(value, label) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const isSpotLabel = /\bspot\b|findmespot/i.test(label || '');
+    const idFromUrl = parseSpotFeedIdFromUrl(raw);
+    if (idFromUrl) return idFromUrl;
+    if ((isSpotLabel || /findmespot/i.test(raw)) && /^[A-Za-z0-9]{20,80}$/.test(raw)) return raw;
+    return '';
+  }
+
+  function parseSpotFeedIdFromUrl(value) {
+    try {
+      const url = new URL(value);
+      const host = url.hostname.toLowerCase();
+      if (!host.includes('findmespot.com')) return '';
+      const fromParam = url.searchParams.get('glId') || url.searchParams.get('feedId') || url.searchParams.get('feed_id') || url.searchParams.get('id') || '';
+      if (/^[A-Za-z0-9]{20,80}$/.test(fromParam)) return fromParam;
+      const fromPath = url.pathname.match(/\/public\/feed\/([A-Za-z0-9]{20,80})\//)?.[1] || '';
+      if (fromPath) return fromPath;
+    } catch (_) {
+      const match = String(value || '').match(/findmespot\.com\S*(?:glId=|\/public\/feed\/)([A-Za-z0-9]{20,80})/i);
+      if (match) return match[1];
+    }
     return '';
   }
 
@@ -1096,6 +1243,7 @@
   function setText(id, text) { $(id).textContent = text; }
   function textOf(el, localName) { const found = Array.from(el.childNodes).find((n) => n.localName === localName); return found ? found.textContent.trim() : ''; }
   function dedupeLatLon(points) { const out = []; let prev = null; for (const p of points) { if (!prev || Math.abs(prev.lat - p.lat) > 1e-7 || Math.abs(prev.lon - p.lon) > 1e-7) out.push(p); prev = p; } return out; }
+  function dedupePositionHistory(points) { const out = []; const seen = new Set(); for (const p of dedupeLatLon(points)) { const key = `${Number(p.lat).toFixed(7)},${Number(p.lon).toFixed(7)}`; if (seen.has(key)) continue; seen.add(key); out.push(p); } return out; }
   function parseGarminUtc(s) { if (!s) return 0; const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)$/i); if (!m) return Date.parse(`${s} UTC`) || Date.parse(s) || 0; let [, mo, da, yr, hr, mi, se, ap] = m; let h = Number(hr) % 12; if (ap.toUpperCase() === 'PM') h += 12; return Date.UTC(Number(yr), Number(mo) - 1, Number(da), h, Number(mi), Number(se)); }
   function infoText(r) { const parts = [`Updated: ${r.time || r.timeUtc || '—'}`]; if (r.ele != null) parts.push(`Elev: ${Math.round(r.ele)} m`); if (r.gpsFix) parts.push(`GPS fix: ${r.gpsFix}`); if (r.emergency === 'True') parts.push('EMERGENCY'); if (r.text) parts.push(`Text: ${r.text}`); return parts.join(' · '); }
   function staleMinutes(r) { return r.utcMs ? (Date.now() - r.utcMs) / 60000 : null; }
@@ -1103,6 +1251,7 @@
   function formatKm(m) { return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
   function formatElevation(m) { return m == null ? '—' : `${Math.round(m)} m`; }
   function accuracyStyle(accuracy) { return { radius: accuracy || 0, color: '#1a73e8', weight: 2, opacity: 0.65, fillColor: '#1a73e8', fillOpacity: 0.12, interactive: false }; }
+  function sourceTypeLabel(type) { return type === 'spot' ? 'SPOT' : type === 'garmin-mapshare' ? 'Garmin' : 'source'; }
   function distanceM(lat1, lon1, lat2, lon2) { const R = 6371000, p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180, dp = (lat2 - lat1) * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180; const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); }
   function bearingDeg(lat1, lon1, lat2, lon2) { const p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180; const y = Math.sin(dl) * Math.cos(p2); const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl); return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360; }
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }

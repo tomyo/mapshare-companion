@@ -9,11 +9,11 @@ The primary deliverable is a standalone Vercel webapp. It asks for a Garmin user
 - distance and bearing from you to the racer
 - racer speed, course, GPS fix, elevation, and last update
 - Street/topographic map with both markers and a connecting line
-- single-racer Garmin MapShare tracking, or multi-racer race rosters from Google Sheets
+- single-racer Garmin MapShare tracking, or multi-racer Garmin/SPOT race rosters from Google Sheets
 - Garmin MapShare waypoints and routes from `/<mapshare-name>/Waypoints` and `/<mapshare-name>/routes/`
 - any track/history points present in the public KML feed
 - quick header refresh button plus controls for Fit both, Racer, Me, Street/Topo map toggle, and Hide/Show KML
-- auto-refresh of the Garmin feed and map features every 60 seconds
+- auto-refresh of Garmin data every 60 seconds, with SPOT feeds throttled to roughly 2.5 minutes per feed
 - contextual map popups: tap the racer, a waypoint, your location, or any map point to open that point in Google Maps or OSM
 - distance measuring: choose **Measure from here** in any location popup, then tap map points to update a straight-line distance until you close the measuring popup or click outside the map
 - subtle distance label on the dotted line between your location and the racer
@@ -21,7 +21,7 @@ The primary deliverable is a standalone Vercel webapp. It asks for a Garmin user
 - top-right menu can switch between solo mode and Transcapixaba 2026 race mode
 - KML import from the top-right menu or supported Android share/open flows, persisted locally and toggleable from the action row
 - Garmin/source features are separate from imported KML; when detected, they can be shown/hidden from the top-right menu
-- race mode shows subtle racer name labels; racer popups can show/hide each racer's Garmin history track locally
+- race mode shows subtle racer name labels; racer popups can show/hide each racer's source history track locally
 
 ## Why this works
 
@@ -31,7 +31,7 @@ Garmin exposes public KML feeds at:
 https://share.garmin.com/feed/share/<mapshare-name>
 ```
 
-The Vercel app fetches Garmin data through `/api/garmin`, an Edge Function proxy, so Chrome/mobile browsers do not hit Garmin CORS restrictions.
+The Vercel app fetches Garmin data through `/api/garmin`, an Edge Function proxy, so Chrome/mobile browsers do not hit Garmin CORS restrictions. Race sheet SPOT sources use `/api/spot` against SPOT Public Feed JSON endpoints.
 
 The older bookmarklet/userscript fallback still runs directly on `share.garmin.com/<mapshare-name>`, infers `<mapshare-name>` from the current URL, and fetches `/feed/share/<mapshare-name>` from the same origin.
 
@@ -61,10 +61,10 @@ https://mapshare-companion.vercel.app/?sheet=<google-sheet-id>&gid=0
 The Google Sheet must be public/readable by link. Race roster columns:
 
 ```text
-Name | GarminLink | GsmLink | FlymasterLink | UseMapFeatures | Notes
+Name | GarminLink | SPOT | GsmLink | FlymasterLink | UseMapFeatures | Notes
 ```
 
-For now, `GarminLink` / `Garmin` / `MapShare` columns are supported. Other source columns are preserved conceptually but ignored until providers are added. If a racer has multiple Garmin source columns, the app fetches all of them and uses the newest valid Garmin position. Set `UseMapFeatures` to `true` on one racer to use that racer's Garmin routes/waypoints/history as the race map features.
+`GarminLink` / `Garmin` / `MapShare` columns and `SPOT` / `SpotLink` / `SpotId` columns are supported. Other source columns are preserved conceptually but ignored until providers are added. If a racer has multiple supported source columns, the app fetches all of them and uses the newest valid position. Set `UseMapFeatures` to `true` on one racer to use that racer's Garmin routes/waypoints/history as the race map features.
 
 Generic usage pattern:
 

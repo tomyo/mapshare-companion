@@ -42,8 +42,8 @@ https://share.garmin.com/nhayes
   - `?map=<mapshare-name>`
 - Hardcoded race routes auto-start:
   - `/race/transcapixaba-2026`
-- Google Sheet race rosters load with `?sheet=<google-sheet-id-or-url>&gid=<gid>`. The first row is treated as headers when Google's gviz response does not provide column labels. Expected columns are a racer name column (`Name`, `Racer`, `Pilot`, etc.) plus source columns such as `GarminLink`, `SpotLink`, `SpotId`, `GsmLink`, `FlymasterLink`, and optional `UseMapFeatures`. Currently only Garmin/MapShare sources are actively fetched; unknown source columns are retained on the racer object for future providers.
-- In sheet race mode, each racer can have multiple Garmin source columns. The app refreshes all supported sources and uses the newest valid position per racer. If one racer has `UseMapFeatures=true`/`yes`/`1`/`x`, that racer's first Garmin source is used for Garmin routes/waypoints/history map features.
+- Google Sheet race rosters load with `?sheet=<google-sheet-id-or-url>&gid=<gid>`. The first row is treated as headers when Google's gviz response does not provide column labels. Expected columns are a racer name column (`Name`, `Racer`, `Pilot`, etc.) plus source columns such as `GarminLink`, `SPOT`, `SpotLink`, `SpotId`, `GsmLink`, `FlymasterLink`, and optional `UseMapFeatures`. Garmin/MapShare and SPOT Public Feed IDs are actively fetched; unknown source columns are retained on the racer object for future providers.
+- In sheet race mode, each racer can have multiple Garmin/SPOT source columns. The app refreshes all supported sources and uses the newest valid position per racer. SPOT sources are throttled client-side to ~2.5 minutes per feed. If one racer has `UseMapFeatures=true`/`yes`/`1`/`x`, that racer's first Garmin source is used for Garmin routes/waypoints/history map features.
 - The normalized MapShare name is stored in `localStorage` under `garminRaceTracker.mapName`.
 - The setup and tracker headers include a small `Donate` link to `https://ko-fi.com/mapsharecompanion`.
 - The tracker shows:
@@ -72,7 +72,7 @@ public/manifest.webmanifest  PWA metadata, icons, Web Share Target
 public/sw.js           Service worker for install/offline app shell
 public/icon.svg        Source icon; PNG icons live in public/icons/
 api/garmin.js          Vercel Edge Function Garmin proxy
-api/spot.js            TODO: add SPOT proxy/provider in next session
+api/spot.js            Vercel Edge Function SPOT public feed proxy
 vercel.json            Rewrites all non-/api paths to /index.html
 src/*                  Legacy bookmarklet/userscript code
 runtime dist/*         Generated bookmarklet/userscript artifacts
@@ -110,7 +110,7 @@ MapShare names are restricted to `^[A-Za-z0-9_-]{1,100}$`.
 
 ## Race roster / provider model
 
-The current multi-racer implementation is in `public/app.js` and is intentionally provider-shaped even though only Garmin fetches are active.
+The current multi-racer implementation is in `public/app.js` and is provider-shaped with Garmin and SPOT fetchers active.
 
 Important functions/structures:
 
@@ -119,9 +119,10 @@ parseRaceSheetParams()     detects ?sheet=... and /race/transcapixaba-2026
 loadRaceFromSheet()        loads Google Sheets gviz JSON and builds race/racers
 rowToRacer()               maps one sheet row into { id, name, sources, unsupportedSources }
 parseGarminSource()        detects Garmin links/usernames and creates garmin-mapshare sources
+parseSpotSource()          detects SPOT feed IDs/shared URLs and creates spot sources
 refreshRaceRacers()        refreshes all racers
 refreshRaceRacer()         refreshes all supported sources for one racer and chooses newest position
-race.position shape        same parsed position object used by Garmin: lat/lon/ele/speedText/course/utcMs/history/sourceLabel/sourceName
+race.position shape        normalized Garmin/SPOT object: lat/lon/ele/speedText/course/utcMs/history/sourceLabel/sourceName/sourceType
 ```
 
 Sheet columns are treated as source labels. Name columns and metadata columns are reserved; non-empty source columns become either supported `sources[]` or `unsupportedSources[]`.
@@ -144,44 +145,11 @@ https://live.garmin.com/<name>
 <name>
 ```
 
-## Next major task: add SPOT source support
+## SPOT source support
 
-Goal: support sheet columns such as `SpotLink`, `SpotId`, `SPOT`, or `SPOTLink` so each racer can have both Garmin and SPOT/GSM-style tracking sources. The app should fetch all supported sources and use the newest valid position per racer, just like multiple Garmin sources already do.
+Sheet columns such as `SPOT`, `SpotLink`, `SpotId`, or `SPOTLink` can contain a SPOT Public Feed ID or a FindMeSPOT shared/API URL. The browser calls `/api/spot?id=<feed-id>&type=message`, normalizes the latest message into the same position shape as Garmin, keeps message history when available, and selects the newest valid source per racer by `utcMs`.
 
-Recommended approach for next session:
-
-1. Get one or more real SPOT public share URLs / IDs from the race sheet or user.
-2. Investigate SPOT public endpoints in browser/network/curl.
-   - Determine what identifier should be stored from `SpotLink`/`SpotId`.
-   - Determine whether CORS blocks browser fetches.
-3. Add `api/spot.js` Edge proxy if needed, mirroring `api/garmin.js` style.
-4. In `public/app.js`:
-   - add `parseSpotSource(value, label)` near `parseGarminSource()`
-   - update `rowToRacer()` to push `{ type: 'spot', label, id/name/url, raw }`
-   - add `refreshSource(source)` or equivalent refactor so `refreshRaceRacer()` is not Garmin-specific
-   - normalize SPOT response into the existing position shape:
-     ```js
-     {
-       racerId,
-       name,
-       sourceLabel,
-       sourceName,
-       lat,
-       lon,
-       ele: null,
-       speedText: '—',
-       courseText: '—',
-       courseDeg: NaN,
-       time,
-       timeUtc,
-       utcMs,
-       gpsFix,
-       history: []
-     }
-     ```
-   - preserve newest-source selection by sorting positions by `utcMs`.
-5. Update README/HANDOFF sheet examples to include `SpotLink`.
-6. Run `npm run check`, commit semantically, push, and deploy.
+SPOT polling is throttled client-side to `SPOT_REFRESH_MS` (150 seconds) per feed to follow SPOT's public API guidance.
 
 Potential design note: do not make colors/source preferences part of the shared sheet. Keep racer colors and followed racers client-local.
 
@@ -274,7 +242,7 @@ vercel project protection disable mapshare-companion --sso
 
 ## Suggested next steps
 
-1. Start SPOT support as described in "Next major task" above.
+1. Verify SPOT behavior in production with the Transcapixaba sheet feeds.
 2. Run `npm run check` after any changes.
 3. Commit semantically and push to `origin/main`.
 4. Deploy with `vercel --prod --yes`, then re-alias if Vercel still aliases production to the legacy name:
