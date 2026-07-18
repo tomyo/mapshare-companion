@@ -55,6 +55,7 @@
     kmlVisible: true,
     firstFitDone: false,
     flymaster: null,
+    flymasterSourceIndex: new Map(),
   };
 
   $('setup-form').addEventListener('submit', (event) => {
@@ -199,6 +200,7 @@
       const race = await loadRaceFromSheet(spec);
       state.race = race;
       state.racers = race.racers;
+      indexFlymasterSources();
       state.sourceFeatureSource = race.sourceFeatureSource;
       state.selectedRacerIds = loadSelectedRacers(race.id);
       state.visibleRaceTrackIds = loadVisibleRaceTracks(race.id);
@@ -223,7 +225,7 @@
     updateHeader('Loading Flymaster…');
     if (!state.map) initMap();
     startOwnLocation();
-    const race = { id: `flymaster:${spec.groupId}`, name: spec.name || `Flymaster group ${spec.groupId}`, racers: [], sourceFeatureSource: null, flymasterGroupId: spec.groupId };
+    const race = { id: `flymaster:${spec.groupId}`, name: spec.name || `Flymaster group ${spec.groupId}`, racers: [], sourceFeatureSource: null, flymasterGroupId: spec.groupId, flymasterDynamic: true };
     state.race = race;
     state.racers = race.racers;
     state.sourceFeatureSource = null;
@@ -310,10 +312,12 @@
   }
 
   async function refreshRaceRacers() {
-    if (state.race?.flymasterGroupId) return refreshFlymasterRace();
+    if (state.race?.flymasterDynamic) return refreshFlymasterRace();
     if (!state.racers.length) return;
     setText('racer-status', 'refreshing…');
-    await Promise.allSettled(state.racers.map(refreshRaceRacer));
+    const tasks = state.race?.flymasterGroupId ? [connectFlymasterGroup(state.race.flymasterGroupId).catch((err) => console.warn('Flymaster connection failed', err))] : [];
+    tasks.push(...state.racers.map(refreshRaceRacer));
+    await Promise.allSettled(tasks);
     renderRaceRacers();
     updateRaceSourceFeatureTrack();
     updateSourceFeaturesMenu();
@@ -340,16 +344,15 @@
     } else if (source.type === 'spot') {
       position = await fetchSpotPosition(source);
       if (!position) throw new Error(`No SPOT position for ${source.id}`);
+    } else if (source.type === 'flymaster') {
+      position = await fetchFlymasterPosition(source);
+      if (!position) throw new Error(`No Flymaster position for ${source.id}`);
     } else {
       throw new Error(`Unsupported source: ${source.type || 'unknown'}`);
     }
-    return Object.assign(clonePosition(position), {
-      racerId: racer.id,
-      name: racer.name,
-      sourceLabel: source.label,
-      sourceName: source.name || source.id || '',
-      sourceType: source.type,
-    });
+    const normalized = decorateSourcePosition(position, racer, source);
+    source.latestPosition = clonePosition(normalized);
+    return normalized;
   }
 
   async function fetchGarminPosition(source) {
@@ -381,6 +384,15 @@
     return latest;
   }
 
+  async function fetchFlymasterPosition(source) {
+    const groupId = state.race?.flymasterGroupId || source.groupId;
+    if (!groupId) throw new Error('Missing Flymaster group id');
+    await connectFlymasterGroup(groupId).catch((err) => {
+      if (!source.flymasterPosition) throw err;
+    });
+    return source.flymasterPosition ? clonePosition(source.flymasterPosition) : null;
+  }
+
   async function fetchSpotPosition(source) {
     const now = Date.now();
     if (source.spotFetchedAt && now - source.spotFetchedAt < SPOT_REFRESH_MS) {
@@ -403,6 +415,16 @@
       source.spotInFlight = null;
     });
     return clonePosition(await source.spotInFlight);
+  }
+
+  function decorateSourcePosition(position, racer, source) {
+    return Object.assign(clonePosition(position), {
+      racerId: racer.id,
+      name: racer.name,
+      sourceLabel: source.label,
+      sourceName: source.name || source.id || '',
+      sourceType: source.type,
+    });
   }
 
   function clonePosition(position) {
@@ -636,23 +658,60 @@
         const sn = String(pilot.sn || '').trim();
         if (!sn) continue;
         fm.pilots.set(sn, pilot);
-        const racer = upsertFlymasterRacer(sn, pilot.nm);
-        const position = flymasterPositionFromPilot(pilot, racer.name, fm.groupId);
-        if (position) applyFlymasterPosition(racer, position);
+        const position = flymasterPositionFromPilot(pilot, pilot.nm, fm.groupId);
+        if (position) applyFlymasterIncomingPosition(sn, position);
       }
-      state.racers.sort((a, b) => a.name.localeCompare(b.name));
+      if (state.race?.flymasterDynamic) state.racers.sort((a, b) => a.name.localeCompare(b.name));
       scheduleFlymasterRaceRender(fm);
     } else if (data.type === 'tick' && Array.isArray(data.markers)) {
       for (const marker of data.markers) {
         const sn = String(marker[1] || '').trim();
         if (!sn) continue;
         const pilot = fm.pilots.get(sn);
-        const racer = upsertFlymasterRacer(sn, pilot?.nm);
-        const position = flymasterPositionFromMarker(marker, racer.name, fm.groupId);
-        if (position) applyFlymasterPosition(racer, position);
+        const position = flymasterPositionFromMarker(marker, pilot?.nm, fm.groupId);
+        if (position) applyFlymasterIncomingPosition(sn, position);
       }
       scheduleFlymasterRaceRender(fm);
     }
+  }
+
+  function applyFlymasterIncomingPosition(sn, position) {
+    if (state.race?.flymasterDynamic) {
+      const racer = upsertFlymasterRacer(sn, position.name);
+      position.name = racer.name;
+      applyFlymasterPosition(racer, position);
+      return;
+    }
+
+    const matches = state.flymasterSourceIndex.get(String(sn)) || [];
+    for (const { racer, source } of matches) {
+      const normalized = decorateSourcePosition(Object.assign({}, position, { name: racer.name }), racer, source);
+      source.flymasterPosition = clonePosition(position);
+      source.latestPosition = clonePosition(normalized);
+      updateRacerFromSourceCache(racer);
+    }
+  }
+
+  function updateRacerFromSourceCache(racer) {
+    const positions = racer.sources.map((source) => source.latestPosition).filter(Boolean).map(clonePosition);
+    positions.sort((a, b) => (b.utcMs || 0) - (a.utcMs || 0));
+    const latest = positions[0] || null;
+    if (latest) latest.history = mergePositionHistory(racer.position, latest);
+    racer.position = latest;
+    racer.error = positions.length ? '' : racer.error;
+  }
+
+  function indexFlymasterSources() {
+    const index = new Map();
+    for (const racer of state.racers) {
+      for (const source of racer.sources) {
+        if (source.type !== 'flymaster' || !source.id) continue;
+        const id = String(source.id).trim();
+        if (!index.has(id)) index.set(id, []);
+        index.get(id).push({ racer, source });
+      }
+    }
+    state.flymasterSourceIndex = index;
   }
 
   function upsertFlymasterRacer(sn, name) {
@@ -1404,6 +1463,59 @@
   function centerMe() { if (state.me) state.map.setView([state.me.lat, state.me.lon], Math.max(state.map.getZoom(), 15)); }
   function maybeInitialFit() { if (state.raceMode) { if (!state.firstFitDone && racePositions().length) { fitRaceTargets(); state.firstFitDone = true; } return; } if (!state.firstFitDone && state.racer && state.me) { fitBoth(); state.firstFitDone = true; } else if (!state.firstFitDone && state.racer) centerRacer(); }
 
+  function parseRaceDateConfig(value, timezone) {
+    if (!value) return '';
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'number') return sheetSerialDateToIso(value, timezone);
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const native = Date.parse(raw);
+    if (Number.isFinite(native) && /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return new Date(native).toISOString();
+    const parsed = parseLocalDateTime(raw);
+    if (!parsed) return Number.isFinite(native) ? new Date(native).toISOString() : raw;
+    return new Date(zonedTimeToUtcMs(parsed, timezone || 'UTC')).toISOString();
+  }
+
+  function parseLocalDateTime(raw) {
+    let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
+    if (m) return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour: Number(m[4] || 0), minute: Number(m[5] || 0), second: Number(m[6] || 0) };
+    m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2})(?::(\d{2})(?::(\d{2}))?)?)?$/);
+    if (m) return { year: Number(m[3]), month: Number(m[2]), day: Number(m[1]), hour: Number(m[4] || 0), minute: Number(m[5] || 0), second: Number(m[6] || 0) };
+    return null;
+  }
+
+  function sheetSerialDateToIso(value, timezone) {
+    const days = Number(value);
+    if (!Number.isFinite(days)) return '';
+    const wholeDays = Math.floor(days);
+    const fracMs = Math.round((days - wholeDays) * 86400000);
+    const ms = Date.UTC(1899, 11, 30) + wholeDays * 86400000 + fracMs;
+    const local = new Date(ms);
+    return new Date(zonedTimeToUtcMs({ year: local.getUTCFullYear(), month: local.getUTCMonth() + 1, day: local.getUTCDate(), hour: local.getUTCHours(), minute: local.getUTCMinutes(), second: local.getUTCSeconds() }, timezone || 'UTC')).toISOString();
+  }
+
+  function zonedTimeToUtcMs(parts, timezone) {
+    const guess = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour || 0, parts.minute || 0, parts.second || 0);
+    return guess - timezoneOffsetMs(timezone, guess);
+  }
+
+  function timezoneOffsetMs(timezone, utcMs) {
+    try {
+      const dtf = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const vals = {};
+      for (const part of dtf.formatToParts(new Date(utcMs))) if (part.type !== 'literal') vals[part.type] = Number(part.value);
+      const hour = vals.hour === 24 ? 0 : vals.hour;
+      return Date.UTC(vals.year, vals.month - 1, vals.day, hour, vals.minute, vals.second) - utcMs;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function parseFlymasterGroupId(value) {
+    const raw = String(value || '').trim();
+    return /^\d{1,10}$/.test(raw) ? raw : '';
+  }
+
   function parseFlymasterRaceParams(params, pathname) {
     const pathGroup = pathname.match(/^\/race\/flymaster\/(\d{1,10})$/)?.[1] || '';
     const raw = pathGroup || params.get('flymasterGroup') || params.get('flymaster') || params.get('grp') || '';
@@ -1434,10 +1546,25 @@
   }
 
   async function loadRaceFromSheet(spec) {
-    const rows = await getSheetData(spec.id, spec.gid);
+    const config = await getSheetConfig(spec.id, spec.configSheet || 'Config').catch((err) => {
+      console.warn('Race config sheet not found; using URL/gid settings', err);
+      return {};
+    });
+    const raceTimezone = String(config.RaceTimezone || config.Timezone || spec.timezone || 'America/Sao_Paulo').trim();
+    const rows = await getSheetDataByName(spec.id, config.RacersSheet || spec.racersSheet || 'Racers').catch(() => getSheetData(spec.id, spec.gid));
+    const flymasterGroupId = parseFlymasterGroupId(config.FlymasterGroup || config.FlymasterGrp || config.Group || spec.flymasterGroupId || '');
     const racers = rows.map(rowToRacer).filter(Boolean);
     if (!racers.length) throw new Error('No racers with supported sources found in sheet.');
-    return { id: `sheet:${spec.id}:${spec.gid}`, name: spec.name || 'Race sheet', start: spec.start || '', end: spec.end || '', racers, sourceFeatureSource: findSourceFeatureSource(racers) };
+    return {
+      id: `sheet:${spec.id}:${spec.gid || config.RacersSheet || 'Racers'}`,
+      name: config.RaceName || config.Name || spec.name || 'Race sheet',
+      start: parseRaceDateConfig(config.RaceStart || config.Start || spec.start || '', raceTimezone),
+      end: parseRaceDateConfig(config.RaceEnd || config.End || spec.end || '', raceTimezone),
+      timezone: raceTimezone,
+      flymasterGroupId,
+      racers,
+      sourceFeatureSource: findSourceFeatureSource(racers),
+    };
   }
 
   function findSourceFeatureSource(racers) {
@@ -1460,8 +1587,10 @@
       if (!value || reserved.has(normalizeHeader(label))) continue;
       const garminName = parseGarminSource(value, label);
       const spotId = parseSpotSource(value, label);
+      const flymasterId = parseFlymasterSource(value, label);
       if (garminName) sources.push({ type: 'garmin-mapshare', label, name: garminName, raw: String(value).trim() });
       else if (spotId) sources.push({ type: 'spot', label, id: spotId, raw: String(value).trim() });
+      else if (flymasterId) sources.push({ type: 'flymaster', label, id: flymasterId, raw: String(value).trim() });
       else unsupportedSources.push({ type: 'unknown', label, raw: String(value).trim() });
     }
     if (!sources.length && !unsupportedSources.length) return null;
@@ -1473,6 +1602,16 @@
     const isGarminLabel = /garmin|mapshare|inreach/i.test(label || '');
     if (/share\.garmin\.com/i.test(raw) || /live\.garmin\.com/i.test(raw)) return parseMapName(raw);
     if (isGarminLabel && /^[A-Za-z0-9_-]{1,100}$/.test(raw)) return raw;
+    return '';
+  }
+
+  function parseFlymasterSource(value, label) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const isFlymasterLabel = /flymaster|fly.?master|fm(id)?|tracker/i.test(label || '');
+    const urlMatch = raw.match(/(?:[?&](?:p|pilot|sn|tracker)=|\/pilot\/)(\d{4,12})/i);
+    if (urlMatch) return urlMatch[1];
+    if (isFlymasterLabel && /^\d{4,12}$/.test(raw)) return raw;
     return '';
   }
 
@@ -1502,6 +1641,45 @@
     return '';
   }
 
+  async function getSheetConfig(id, sheetName = 'Config') {
+    const rows = await getSheetRowsWithHeaderOption(id, { sheet: sheetName, headers: 0 });
+    const config = {};
+    for (const row of rows.slice(1)) {
+      const key = String(cellValue(row[0]) || '').trim();
+      if (!key) continue;
+      config[key] = cellValue(row[1]);
+    }
+    return config;
+  }
+
+  async function getSheetDataByName(id, sheetName) {
+    const json = await getSheetJson(id, { sheet: sheetName });
+    let headers = json.cols.map((column) => String(column.label || '').trim());
+    let rows = json.rows || [];
+    if (!headers.some(Boolean) && rows.length) {
+      headers = (rows[0].c || []).map(cellValue).map((value) => String(value || '').trim());
+      rows = rows.slice(1);
+    }
+    return rows.map((r) => rowFromCells(headers, r.c || [])).filter((row) => Object.values(row).some(Boolean));
+  }
+
+  async function getSheetRowsWithHeaderOption(id, options = {}) {
+    const json = await getSheetJson(id, options);
+    return (json.rows || []).map((r) => r.c || []);
+  }
+
+  async function getSheetJson(id, options = {}) {
+    const params = new URLSearchParams({ tqx: 'out:json' });
+    if (options.sheet) params.set('sheet', options.sheet);
+    if (options.gid != null) params.set('gid', options.gid);
+    if (options.headers != null) params.set('headers', String(options.headers));
+    const res = await fetch(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq?${params}`);
+    const text = await res.text();
+    const jsonString = text.match(/(?<="table":).*(?=}\);)/s)?.[0];
+    if (!jsonString) throw new Error('Could not parse Google Sheet response.');
+    return JSON.parse(jsonString);
+  }
+
   async function getSheetData(id, gid = 0) {
     const text = await (await fetch(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}`)).text();
     const jsonString = text.match(/(?<="table":).*(?=}\);)/s)?.[0];
@@ -1521,6 +1699,15 @@
       });
       return row;
     }).filter((row) => Object.values(row).some(Boolean));
+  }
+
+  function rowFromCells(headers, cells) {
+    const row = {};
+    headers.forEach((header, index) => {
+      if (!header) return;
+      row[header] = cellValue(cells[index]);
+    });
+    return row;
   }
 
   function cellValue(cell) {

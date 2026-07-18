@@ -60,13 +60,22 @@ https://mapshare-companion.vercel.app/race/transcapixaba-2026
 https://mapshare-companion.vercel.app/?sheet=<google-sheet-id>&gid=0
 ```
 
-The Google Sheet must be public/readable by link. Race roster columns:
+The Google Sheet must be public/readable by link. The preferred race sheet layout has two tabs:
 
 ```text
-Name | GarminLink | SPOT | GsmLink | FlymasterLink | UseMapFeatures | Notes
+Config tab:
+Param | Value
+RaceName | Transcapixaba 2026
+RaceStart | 2026-07-14 09:00:00
+RaceEnd | 2026-07-25 15:00:00
+RaceTimezone | America/Sao_Paulo
+FlymasterGroup | 7801
+
+Racers tab:
+Name | GarminLink | SPOT | FlymasterId | UseMapFeatures | Notes
 ```
 
-`GarminLink` / `Garmin` / `MapShare` columns and `SPOT` / `SpotLink` / `SpotId` columns are supported. Other source columns are preserved conceptually but ignored until providers are added. If a racer has multiple supported source columns, the app fetches all of them and uses the newest valid position. Set `UseMapFeatures` to `true` on one racer to use that racer's Garmin routes/waypoints/history as the race map features.
+`GarminLink` / `Garmin` / `MapShare` columns, `SPOT` / `SpotLink` / `SpotId` columns, and `FlymasterId` columns are supported. If `Config.FlymasterGroup` is present, the app connects once to that Flymaster group and maps live Flymaster positions to racers by `FlymasterId`. If a racer has multiple supported source columns, the app fetches all of them and uses the newest valid position. Set `UseMapFeatures` to `true` on one racer to use that racer's Garmin routes/waypoints/history as the race map features.
 
 Generic usage pattern:
 

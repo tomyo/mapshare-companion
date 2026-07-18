@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mapshare-companion-v2';
+const CACHE_NAME = 'mapshare-companion-v3';
 const SHARE_DATA_URL = '/share-target-data';
 const APP_SHELL = [
   '/',
