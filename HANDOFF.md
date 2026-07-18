@@ -33,7 +33,8 @@ https://share.garmin.com/nhayes
 - Directly hijacking normal `https://share.garmin.com/...` link clicks is not possible without Garmin/origin association; use Web Share Target instead.
 - External map links are contextual popup actions, not fixed toolbar buttons. Google Maps links use point search (`/maps/search/?api=1&query=lat,lon`), not directions/navigation.
 - Base map preference is stored in `localStorage` under `garminRaceTracker.baseMap`; valid values are `street` and `topo`. Topo uses OpenTopoMap public tiles.
-- The top-right `⋮` tracker menu currently has one uncommon action: `Change racer`, which clears the saved `localStorage` racer and navigates back to `/`.
+- Imported KML is stored in `localStorage` under `garminRaceTracker.importedKml`, rendered as an independent map layer, and toggled from the action row.
+- The top-right `⋮` tracker menu currently has `Import KML` and `Change racer`; Change racer clears the saved `localStorage` racer and navigates back to `/`.
 - Explicit targets auto-start:
   - `/<mapshare-name>`
   - `?map=<mapshare-name>`
@@ -45,8 +46,9 @@ https://share.garmin.com/nhayes
   - distance and bearing from observer to racer
   - prominent speed/elevation plus GPS fix/last-update metadata; course remains in racer popup/info where available
   - Street/topographic map with racer marker, observer marker, accuracy circle, and connector line
-  - waypoints, routes, and KML history/track points when available
-  - quick header refresh button plus controls: Fit both, Racer, Me, simple Show/Hide features toggle, Street/Topo base map toggle
+  - Garmin waypoints/routes and KML history/track points when available
+  - imported KML points/lines as a source-independent map/course layer
+  - quick header refresh button plus controls: Fit both, Racer, Me, Street/Topo base map toggle, Hide/Show KML
   - contextual map popups: tap racer, observer, waypoint, or any map point to open that point in Google Maps or OSM
   - popup action `Measure from here`: enters measuring mode, then map taps update a straight-line distance line/label until the measurement popup is closed or the user clicks outside the map
   - the dotted observer→racer connector includes a subtle permanent distance label in km

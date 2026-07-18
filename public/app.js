@@ -3,6 +3,7 @@
 
   const STORE_KEY = 'garminRaceTracker.mapName';
   const BASE_MAP_KEY = 'garminRaceTracker.baseMap';
+  const KML_KEY = 'garminRaceTracker.importedKml';
   const REFRESH_MS = 60000;
   const STALE_AFTER_MIN = 15;
 
@@ -17,6 +18,7 @@
     waypointLayer: null,
     routeLayer: null,
     trackLayer: null,
+    kmlLayer: null,
     racerMarker: null,
     meMarker: null,
     accuracyCircle: null,
@@ -29,8 +31,9 @@
     geoWatch: null,
     racer: null,
     me: null,
-    featuresVisible: true,
     mapFeatures: { waypoints: [], routes: [], collections: null },
+    importedKml: null,
+    kmlVisible: true,
     firstFitDone: false,
   };
 
@@ -54,6 +57,10 @@
     const willOpen = trackMenu.classList.contains('hidden');
     trackMenu.classList.toggle('hidden', !willOpen);
     menuToggle.setAttribute('aria-expanded', String(willOpen));
+  });
+  $('import-kml').addEventListener('click', () => {
+    closeTrackMenu();
+    $('kml-file').click();
   });
   $('change-map').addEventListener('click', () => {
     clearSavedMapName();
@@ -82,8 +89,9 @@
   $('center-racer').addEventListener('click', centerRacer);
   $('center-me').addEventListener('click', centerMe);
   $('refresh').addEventListener('click', () => refreshAll());
-  $('toggle-features').addEventListener('click', toggleMapFeatures);
   $('toggle-basemap').addEventListener('click', toggleBaseMap);
+  $('toggle-kml').addEventListener('click', toggleKmlLayer);
+  $('kml-file').addEventListener('change', importKmlFile);
 
   const launchParams = new URL(location.href).searchParams;
   const sharedMap = parseSharedMap(launchParams);
@@ -130,6 +138,7 @@
     state.routeLayer = L.layerGroup().addTo(state.featureLayers);
     state.trackLayer = L.layerGroup().addTo(state.featureLayers);
     state.waypointLayer = L.layerGroup().addTo(state.featureLayers);
+    state.kmlLayer = L.layerGroup().addTo(state.map);
     state.measureLayer = L.layerGroup().addTo(state.map);
     state.racerTrail = L.polyline([], { color: '#0b73ff', weight: 4, opacity: 0.9 }).addTo(state.trackLayer);
     state.connector = L.polyline([], { color: '#ffd43b', weight: 3, opacity: 0.9, dashArray: '8 8' }).addTo(state.layers);
@@ -137,6 +146,7 @@
       if (state.measureStart) updateMeasurement(event.latlng.lat, event.latlng.lng);
       else openLocationPopup(event.latlng.lat, event.latlng.lng, 'Selected location');
     });
+    loadImportedKml();
   }
 
   async function refreshRacer() {
@@ -169,7 +179,6 @@
         collections: collectionsRes.status === 'fulfilled' ? collectionsRes.value : null,
       };
       renderMapFeatures();
-      updateFeatureButton();
     } catch (err) {
       console.warn('Map feature load failed', err);
     }
@@ -444,19 +453,110 @@
   function googlePointUrl(lat, lon) { return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`; }
   function osmPointUrl(lat, lon) { return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`; }
 
-  function toggleMapFeatures() {
-    state.featuresVisible = !state.featuresVisible;
-    if (state.featuresVisible) state.featureLayers.addTo(state.map);
-    else state.map.removeLayer(state.featureLayers);
-    updateFeatureButton();
+  async function importKmlFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const imported = parseImportedKml(text, file.name || 'Imported KML');
+      if (!imported.points.length && !imported.lines.length) throw new Error('No points or lines found in KML.');
+      state.importedKml = imported;
+      state.kmlVisible = true;
+      saveImportedKml(text);
+      renderImportedKml(true);
+      setText('info', `Imported KML: ${imported.points.length} points, ${imported.lines.length} lines.`);
+    } catch (err) {
+      console.error(err);
+      setText('info', `KML import failed: ${err.message || err}`);
+      alert(`KML import failed: ${err.message || err}`);
+    }
   }
 
-  function updateFeatureButton() {
-    const w = state.mapFeatures.waypoints.length;
-    const r = state.mapFeatures.routes.length;
-    const button = $('toggle-features');
-    button.textContent = state.featuresVisible ? 'Hide features' : 'Show features';
-    button.title = `${w} waypoints, ${r} routes`;
+  function loadImportedKml() {
+    const text = loadSavedKml();
+    if (!text) return updateKmlButton();
+    try {
+      const imported = parseImportedKml(text, 'Imported KML');
+      if (!imported.points.length && !imported.lines.length) return updateKmlButton();
+      state.importedKml = imported;
+      renderImportedKml(false);
+    } catch (err) {
+      console.warn('Saved KML could not be loaded', err);
+      updateKmlButton();
+    }
+  }
+
+  function parseImportedKml(xmlText, fallbackName) {
+    const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error('KML XML parse error.');
+    const out = { name: textOf(doc, 'name') || fallbackName || 'Imported KML', points: [], lines: [] };
+    for (const pm of Array.from(doc.getElementsByTagNameNS('*', 'Placemark'))) {
+      const name = textOf(pm, 'name') || 'KML feature';
+      for (const point of Array.from(pm.getElementsByTagNameNS('*', 'Point'))) {
+        const coords = parseKmlCoordinates(textOf(point, 'coordinates'));
+        if (coords[0]) out.points.push({ name, lat: coords[0][0], lon: coords[0][1] });
+      }
+      for (const line of Array.from(pm.getElementsByTagNameNS('*', 'LineString'))) {
+        const coords = parseKmlCoordinates(textOf(line, 'coordinates'));
+        if (coords.length >= 2) out.lines.push({ name, points: coords });
+      }
+      for (const ring of Array.from(pm.getElementsByTagNameNS('*', 'LinearRing'))) {
+        const coords = parseKmlCoordinates(textOf(ring, 'coordinates'));
+        if (coords.length >= 2) out.lines.push({ name, points: coords });
+      }
+    }
+    return out;
+  }
+
+  function parseKmlCoordinates(text) {
+    return String(text || '').trim().split(/\s+/).map((chunk) => {
+      const [lon, lat] = chunk.split(',').map(Number);
+      return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
+    }).filter(Boolean);
+  }
+
+  function renderImportedKml(fitAfterRender) {
+    if (!state.kmlLayer) return;
+    state.kmlLayer.clearLayers();
+    const imported = state.importedKml;
+    if (!imported) return updateKmlButton();
+    const bounds = [];
+    for (const line of imported.lines) {
+      L.polyline(line.points, { color: '#f97316', weight: 4, opacity: 0.9 }).bindPopup(`<b>KML</b><br>${escapeHtml(line.name)}<br>${line.points.length} points`).addTo(state.kmlLayer);
+      bounds.push(...line.points);
+    }
+    for (const point of imported.points) {
+      L.circleMarker([point.lat, point.lon], { radius: 6, color: '#9a3412', fillColor: '#f97316', fillOpacity: 1, weight: 2 })
+        .bindPopup(locationPopupHtml(`KML: ${point.name}`, point.lat, point.lon))
+        .addTo(state.kmlLayer);
+      bounds.push([point.lat, point.lon]);
+    }
+    if (state.kmlVisible) state.kmlLayer.addTo(state.map);
+    else state.map.removeLayer(state.kmlLayer);
+    updateKmlButton();
+    if (fitAfterRender && bounds.length) state.map.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
+  }
+
+  function toggleKmlLayer() {
+    if (!state.importedKml) return;
+    state.kmlVisible = !state.kmlVisible;
+    if (state.kmlVisible) state.kmlLayer.addTo(state.map);
+    else state.map.removeLayer(state.kmlLayer);
+    updateKmlButton();
+  }
+
+  function updateKmlButton() {
+    const button = $('toggle-kml');
+    if (!state.importedKml) {
+      button.textContent = 'No KML';
+      button.title = 'Import a KML from the top-right menu';
+      button.disabled = true;
+      return;
+    }
+    button.disabled = false;
+    button.textContent = state.kmlVisible ? 'Hide KML' : 'Show KML';
+    button.title = `${state.importedKml.points.length} points, ${state.importedKml.lines.length} lines`;
   }
 
   function toggleBaseMap() {
@@ -539,6 +639,8 @@
   function clearSavedMapName() { try { localStorage.removeItem(STORE_KEY); } catch (_) {} }
   function loadBaseMapType() { try { return localStorage.getItem(BASE_MAP_KEY) === 'topo' ? 'topo' : 'street'; } catch (_) { return 'street'; } }
   function saveBaseMapType(type) { try { localStorage.setItem(BASE_MAP_KEY, type); } catch (_) {} }
+  function loadSavedKml() { try { return localStorage.getItem(KML_KEY) || ''; } catch (_) { return ''; } }
+  function saveImportedKml(text) { try { localStorage.setItem(KML_KEY, text); } catch (_) {} }
   function showSetupError(msg) { $('setup-error').textContent = msg; }
   function setText(id, text) { $(id).textContent = text; }
   function textOf(el, localName) { const found = Array.from(el.childNodes).find((n) => n.localName === localName); return found ? found.textContent.trim() : ''; }
