@@ -877,18 +877,30 @@
     const jsonString = text.match(/(?<="table":).*(?=}\);)/s)?.[0];
     if (!jsonString) throw new Error('Could not parse Google Sheet response.');
     const json = JSON.parse(jsonString);
-    const headers = json.cols.map((column) => String(column.label || '').trim());
-    return json.rows.map((r) => {
+    let headers = json.cols.map((column) => String(column.label || '').trim());
+    let rows = json.rows || [];
+    if (!headers.some(Boolean) && rows.length) {
+      headers = (rows[0].c || []).map(cellValue).map((value) => String(value || '').trim());
+      rows = rows.slice(1);
+    }
+    return rows.map((r) => {
       const row = {};
       headers.forEach((header, index) => {
         if (!header) return;
-        const cell = r.c[index];
-        let value = cell && (cell.f ?? cell.v ?? '');
-        if (typeof value === 'string') value = value.trim();
-        row[header] = value;
+        row[header] = cellValue((r.c || [])[index]);
       });
       return row;
     }).filter((row) => Object.values(row).some(Boolean));
+  }
+
+  function cellValue(cell) {
+    let value = cell && (cell.f ?? cell.v ?? '');
+    if (typeof value === 'string') {
+      value = value.trim();
+      if (value.toLowerCase() === 'true') return true;
+      if (value.toLowerCase() === 'false') return false;
+    }
+    return value;
   }
 
   function pickFirst(row, names) {
@@ -923,8 +935,9 @@
     try {
       const u = new URL(raw.includes('://') ? raw : `https://share.garmin.com/${raw}`);
       const parts = u.pathname.split('/').filter(Boolean);
+      const lowerParts = parts.map((part) => part.toLowerCase());
       let name = '';
-      if (parts[0] === 'feed' && parts[1] === 'share') name = parts[2] || '';
+      if (lowerParts[0] === 'feed' && lowerParts[1] === 'share') name = parts[2] || '';
       else name = parts[0] || '';
       return sanitizeName(name);
     } catch (_) {
