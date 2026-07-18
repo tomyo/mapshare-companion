@@ -337,22 +337,29 @@
   }
 
   async function refreshRacerSource(racer, source) {
-    let position = null;
-    if (source.type === 'garmin-mapshare') {
-      position = await fetchGarminPosition(source);
-      if (!position) throw new Error(`No Garmin position for ${source.name}`);
-    } else if (source.type === 'spot') {
-      position = await fetchSpotPosition(source);
-      if (!position) throw new Error(`No SPOT position for ${source.id}`);
-    } else if (source.type === 'flymaster') {
-      position = await fetchFlymasterPosition(source);
-      if (!position) throw new Error(`No Flymaster position for ${source.id}`);
-    } else {
-      throw new Error(`Unsupported source: ${source.type || 'unknown'}`);
+    source.lastTriedAt = Date.now();
+    try {
+      let position = null;
+      if (source.type === 'garmin-mapshare') {
+        position = await fetchGarminPosition(source);
+        if (!position) throw new Error(`No Garmin position for ${source.name}`);
+      } else if (source.type === 'spot') {
+        position = await fetchSpotPosition(source);
+        if (!position) throw new Error(`No SPOT position for ${source.id}`);
+      } else if (source.type === 'flymaster') {
+        position = await fetchFlymasterPosition(source);
+        if (!position) throw new Error(`No Flymaster position for ${source.id}`);
+      } else {
+        throw new Error(`Unsupported source: ${source.type || 'unknown'}`);
+      }
+      const normalized = decorateSourcePosition(position, racer, source);
+      source.latestPosition = clonePosition(normalized);
+      source.lastError = '';
+      return normalized;
+    } catch (err) {
+      source.lastError = err?.message || String(err);
+      throw err;
     }
-    const normalized = decorateSourcePosition(position, racer, source);
-    source.latestPosition = clonePosition(normalized);
-    return normalized;
   }
 
   async function fetchGarminPosition(source) {
@@ -508,11 +515,31 @@
     const selected = state.selectedRacerIds.has(racer.id);
     const trackVisible = state.visibleRaceTrackIds.has(racer.id);
     const hasTrack = !!(r.history && r.history.length > 1);
-    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(r.sourceLabel || r.sourceName || sourceTypeLabel(r.sourceType))}`;
+    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(r.sourceLabel || sourceTypeLabel(r.sourceType))}${sourceDiagnosticsHtml(racer)}`;
     const trackButton = hasTrack
       ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>`
       : '<button type="button" disabled title="The tracking source has not published enough history points for this racer yet">No track yet</button>';
     return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button>${trackButton}</div>`;
+  }
+
+  function sourceDiagnosticsHtml(racer) {
+    if (!racer.sources || racer.sources.length <= 1) return '';
+    const rows = racer.sources.map((source) => {
+      const latest = source.latestPosition;
+      const active = isActiveSource(racer.position, source);
+      const status = latest ? formatUpdatedTime(latest) : source.lastError ? `error: ${source.lastError}` : 'no data yet';
+      const stale = latest && staleMinutes(latest) != null && staleMinutes(latest) > STALE_AFTER_MIN;
+      const color = active ? '#16a34a' : stale ? '#b45309' : latest ? '#475569' : '#991b1b';
+      const label = sourceDisplayLabel(source);
+      return `<div style="margin-top:2px"><span style="display:inline-block;width:.65em;height:.65em;border-radius:50%;background:${color};margin-right:4px"></span><b>${escapeHtml(label)}</b>${active ? ' · active' : ''} · ${escapeHtml(status)}</div>`;
+    }).join('');
+    return `<br><div style="margin-top:6px"><b>Sources</b>${rows}</div>`;
+  }
+
+  function isActiveSource(position, source) {
+    if (!position || !source) return false;
+    const sourceName = source.name || source.id || '';
+    return position.sourceType === source.type && String(position.sourceName || '') === String(sourceName);
   }
 
   function renderRaceTracks() {
