@@ -278,7 +278,7 @@
     state.kmlLayer = L.layerGroup().addTo(state.map);
     state.raceTrackLayer = L.layerGroup().addTo(state.map);
     state.measureLayer = L.layerGroup().addTo(state.map);
-    state.racerTrail = L.polyline([], { color: '#0b73ff', weight: 4, opacity: 0.9 }).addTo(state.trackLayer);
+    state.racerTrail = L.polyline([], { color: '#64748b', weight: 4, opacity: 0.55, dashArray: '8 8' }).addTo(state.trackLayer);
     state.connector = L.polyline([], { color: '#ffd43b', weight: 3, opacity: 0.9, dashArray: '8 8' }).addTo(state.layers);
     state.map.on('click', (event) => {
       if (state.measureStart) updateMeasurement(event.latlng.lat, event.latlng.lng);
@@ -1314,13 +1314,18 @@
   function updateRaceSourceFeatureTrack() {
     if (!state.raceMode || !state.sourceFeatureSource) return;
     const racer = state.racers.find((item) => item.id === state.sourceFeatureSource.racerId);
-    if (racer?.position?.history) state.racerTrail.setLatLngs(racer.position.history.map((p) => [p.lat, p.lon]));
+    const source = racer?.sources.find((item) => item.type === state.sourceFeatureSource.type && (item.name || item.id) === (state.sourceFeatureSource.name || state.sourceFeatureSource.id));
+    const history = source?.latestPosition?.history || [];
+    state.racerTrail.setLatLngs(history.map((p) => [p.lat, p.lon]));
+    state.racerTrail.setStyle({ color: racer ? racerColor(racer.id) : '#64748b', opacity: 0.45, dashArray: '8 8' });
+    if (history.length > 1) state.racerTrail.bindPopup(`<b>Map feature track</b><br>${escapeHtml(racer?.name || state.sourceFeatureSource.racerName || 'source')} · ${escapeHtml(sourceTypeLabel(source?.type || state.sourceFeatureSource.type))}<br>${history.length} points`);
   }
 
   function updateSourceFeaturesMenu() {
     const button = $('toggle-source-features');
     const featureRacer = state.raceMode && state.sourceFeatureSource ? state.racers.find((item) => item.id === state.sourceFeatureSource.racerId) : null;
-    const history = state.raceMode ? featureRacer?.position?.history : state.racer?.history;
+    const featureSource = featureRacer?.sources.find((item) => item.type === state.sourceFeatureSource?.type && (item.name || item.id) === (state.sourceFeatureSource.name || state.sourceFeatureSource.id));
+    const history = state.raceMode ? featureSource?.latestPosition?.history : state.racer?.history;
     const hasHistory = !!(history && history.length > 1);
     const w = state.mapFeatures.waypoints.length;
     const r = state.mapFeatures.routes.length;
@@ -1826,7 +1831,13 @@
       console.warn('Could not save source history cache', err);
     }
   }
-  function racerColor(id) { const palette = ['#e03131', '#1971c2', '#2f9e44', '#f08c00', '#9c36b5', '#0ca678', '#c92a2a', '#364fc7']; let hash = 0; for (const ch of String(id)) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0; return palette[Math.abs(hash) % palette.length]; }
+  function racerColor(id) {
+    const index = state.racers.findIndex((racer) => racer.id === id);
+    if (index >= 0) return `hsl(${Math.round((index * 137.508 + 8) % 360)}, 78%, 43%)`;
+    let hash = 0;
+    for (const ch of String(id)) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0;
+    return `hsl(${Math.abs(hash) % 360}, 78%, 43%)`;
+  }
   function loadSavedKml() { try { return localStorage.getItem(KML_KEY) || ''; } catch (_) { return ''; } }
   function saveImportedKml(text) { try { localStorage.setItem(KML_KEY, text); } catch (_) {} }
   function showSetupError(msg) { $('setup-error').textContent = msg; }
