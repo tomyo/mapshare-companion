@@ -490,19 +490,26 @@
       const r = racer.position;
       const ll = [r.lat, r.lon];
       const selected = state.selectedRacerIds.has(racer.id);
+      const stale = isPositionStale(r);
+      const conflict = !!racer.sourceConflict;
       const color = racerColor(racer.id);
+      const badge = conflict ? '⚠' : stale ? '!' : '';
+      const badgeTitle = conflict ? 'Source conflict' : stale ? 'Stale position' : '';
+      const badgeHtml = badge ? `<div class="racer-status-badge" title="${badgeTitle}" style="position:absolute;right:-5px;top:-7px;width:17px;height:17px;border-radius:50%;background:${conflict ? '#f97316' : '#64748b'};color:#fff;border:2px solid #fff;font:900 11px/13px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">${badge}</div>` : '';
+      const iconOpacity = stale ? 0.55 : 1;
       const icon = L.divIcon({
         className: 'racer-icon-wrap', iconSize: [170, 38], iconAnchor: [19, 19], popupAnchor: [0, -20],
-        html: `<div class="racer-icon ${selected ? 'selected' : ''}" style="background:${color}"><div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}">${escapeHtml(racer.name)}</div>`,
+        html: `<div class="racer-icon ${selected ? 'selected' : ''}" style="background:${color};opacity:${iconOpacity}">${badgeHtml}<div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="opacity:${iconOpacity}">${conflict ? '⚠ ' : stale ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
       });
       let marker = state.racerMarkers.get(racer.id);
       if (!marker) {
-        marker = L.marker(ll, { icon, zIndexOffset: selected ? 4500 : 4000, title: racer.name, bubblingMouseEvents: false }).addTo(state.layers);
+        marker = L.marker(ll, { icon, zIndexOffset: selected ? 4500 : 4000, title: raceMarkerTitle(racer), bubblingMouseEvents: false }).addTo(state.layers);
         state.racerMarkers.set(racer.id, marker);
       } else {
         marker.setLatLng(ll);
         marker.setIcon(icon);
         marker.setZIndexOffset(selected ? 4500 : 4000);
+        marker.options.title = raceMarkerTitle(racer);
       }
       marker.bindPopup(raceRacerPopupHtml(racer));
     }
@@ -513,6 +520,11 @@
       }
     }
     renderRaceTracks();
+  }
+
+  function raceMarkerTitle(racer) {
+    const status = racer.sourceConflict ? ` · conflict: ${racer.sourceConflict.message}` : isPositionStale(racer.position) ? ' · stale' : '';
+    return `${racer.name}${status}`;
   }
 
   function raceRacerPopupHtml(racer) {
@@ -1615,8 +1627,12 @@
   function updateRacePanel() {
     const positions = racePositions();
     const stale = positions.filter(isPositionStale).length;
+    const conflicts = state.racers.filter((racer) => racer.sourceConflict).length;
     const selected = selectedRacePositions();
-    setText('racer-status', `${positions.length}/${state.racers.length} live`);
+    const statusParts = [`${positions.length}/${state.racers.length} live`];
+    if (stale) statusParts.push(`${stale} stale`);
+    if (conflicts) statusParts.push(`${conflicts} conflict`);
+    setText('racer-status', statusParts.join(' · '));
     setText('speed', state.selectedRacerIds.size ? `${selected.length} selected` : 'all');
     setText('elevation', stale ? `${stale} stale` : '—');
     const target = connectorRaceTarget();
