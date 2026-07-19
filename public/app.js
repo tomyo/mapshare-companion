@@ -540,9 +540,9 @@
     const conflict = racer.sourceConflict ? `<br><b>⚠ Source conflict</b>: ${escapeHtml(racer.sourceConflict.message)}` : '';
     const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(sourceLabel)}${staleWarning}${conflict}${sourceDiagnosticsHtml(racer)}`;
     const trackButton = hasTrack
-      ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide active track' : 'Show active track'}</button>`
-      : '<button type="button" disabled title="The active source has not published enough history points for this racer yet">No active track</button>';
-    return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button>${trackButton}</div>${sourceTrackButtonsHtml(racer)}`;
+      ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>`
+      : '<button type="button" disabled title="The active source has not published enough history points for this racer yet">No track yet</button>';
+    return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button>${trackButton}</div>${sourceTrackButtonsHtml(racer, trackVisible)}`;
   }
 
   function sourceDiagnosticsHtml(racer) {
@@ -569,9 +569,12 @@
     return position.sourceType === source.type && String(position.sourceName || '') === String(sourceName);
   }
 
-  function sourceTrackButtonsHtml(racer) {
-    if (!racer.sources || racer.sources.length <= 1) return '';
-    const buttons = racer.sources.map((source) => {
+  function sourceTrackButtonsHtml(racer, trackVisible) {
+    if (!trackVisible || !racer.sources || racer.sources.length <= 1) return '';
+    const activeSource = racer.sources.find((source) => isActiveSource(racer.position, source));
+    const activeLabel = sourceDisplayLabel(activeSource || { type: racer.position?.sourceType });
+    const otherSources = racer.sources.filter((source) => source !== activeSource);
+    const buttons = otherSources.map((source) => {
       const key = sourceTrackKey(racer.id, source);
       const history = source.latestPosition?.history || [];
       const visible = state.visibleRaceTrackIds.has(key);
@@ -579,7 +582,7 @@
       if (history.length < 2) return `<button type="button" disabled title="No ${escapeHtml(label)} track yet">No ${escapeHtml(label)} track</button>`;
       return `<button type="button" data-toggle-source-track="${escapeHtml(key)}" data-source-track-racer="${escapeHtml(racer.id)}">${visible ? 'Hide' : 'Show'} ${escapeHtml(label)} track</button>`;
     }).join('');
-    return `<div class="map-popup-actions source-track-actions"><b style="width:100%;font-size:12px;color:#475569">Source tracks</b>${buttons}</div>`;
+    return `<div class="map-popup-actions source-track-actions"><b style="width:100%;font-size:12px;color:#475569">Showing active ${escapeHtml(activeLabel)} track</b>${buttons || '<span style="font-size:12px;color:#64748b">No alternate source tracks available yet</span>'}</div>`;
   }
 
   function sourceTrackKey(racerId, source) {
@@ -619,11 +622,22 @@
 
   function toggleRaceTrack(id) {
     if (!id || !state.raceMode || !state.race) return;
-    if (state.visibleRaceTrackIds.has(id)) state.visibleRaceTrackIds.delete(id);
-    else state.visibleRaceTrackIds.add(id);
+    if (state.visibleRaceTrackIds.has(id)) {
+      state.visibleRaceTrackIds.delete(id);
+      clearSourceTracksForRacer(id);
+    } else {
+      state.visibleRaceTrackIds.add(id);
+    }
     saveVisibleRaceTracks(state.race.id, state.visibleRaceTrackIds);
     renderRaceTracks();
     refreshOpenRacerPopup(id);
+  }
+
+  function clearSourceTracksForRacer(racerId) {
+    const prefix = `${racerId}::`;
+    for (const key of Array.from(state.visibleRaceTrackIds)) {
+      if (String(key).startsWith(prefix)) state.visibleRaceTrackIds.delete(key);
+    }
   }
 
   function toggleSourceTrack(key, racerId) {

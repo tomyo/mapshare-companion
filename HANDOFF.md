@@ -58,7 +58,7 @@ https://share.garmin.com/nhayes
   - imported KML points/lines as a source-independent map/course layer
   - quick header refresh button plus controls: Fit all/selected, Racer(s), Me, Street/Topo base map toggle, Hide/Show KML
   - race mode racer markers have subtle always-visible name labels; labels open the racer popup unless measurement mode is active
-  - race mode racer popups can Show/Hide the active track and individual per-source tracks (Garmin/Flymaster/SPOT when history exists); visible track IDs/keys are stored locally per race under `garminRaceTracker.visibleTracks.<raceId>`
+  - race mode racer popups show one primary Show/Hide track button for the active source. Once the active track is shown, a secondary section identifies the active source track and offers toggles for alternate source tracks (Garmin/Flymaster/SPOT when history exists). Visible track IDs/keys are stored locally per race under `garminRaceTracker.visibleTracks.<raceId>`
   - contextual map popups: tap racer, observer, waypoint, or any map point to open that point in Google Maps or OSM
   - popup action `Measure from here`: enters measuring mode, then map taps update a straight-line distance line/label until the measurement popup is closed or the user clicks outside the map
   - the dotted observer→racer connector includes a subtle permanent distance label in km
