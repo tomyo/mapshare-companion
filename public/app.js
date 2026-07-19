@@ -52,6 +52,7 @@
     mapFeatures: { waypoints: [], routes: [], collections: null, source: '' },
     flymasterTaskId: '',
     flymasterTaskLoading: null,
+    lastRaceUpdateAt: 0,
     sourceFeaturesVisible: true,
     sourceFeaturesDetected: false,
     sourceFeatureSource: null,
@@ -327,6 +328,7 @@
     const tasks = state.race?.flymasterGroupId ? [connectFlymasterGroup(state.race.flymasterGroupId).catch((err) => console.warn('Flymaster connection failed', err))] : [];
     tasks.push(...state.racers.map(refreshRaceRacer));
     await Promise.allSettled(tasks);
+    state.lastRaceUpdateAt = Date.now();
     renderRaceRacers();
     updateRaceSourceFeatureTrack();
     updateSourceFeaturesMenu();
@@ -791,6 +793,7 @@
   }
 
   function handleFlymasterMessage(fm, data) {
+    state.lastRaceUpdateAt = Date.now();
     if (data.tk) maybeLoadFlymasterTask(data.tk, fm.groupId);
     if (data.type === 'pilot_list' && Array.isArray(data.pilots)) {
       for (const pilot of data.pilots) {
@@ -1575,12 +1578,17 @@
   }
 
   function updateHeader(overrideTitle = '') {
+    updateModeLayout();
     const title = overrideTitle || (state.raceMode ? (state.race?.name || 'Race') : 'MapShare Companion');
     const subtitle = state.raceMode ? '' : (state.racer?.name || state.soloSource?.name || state.soloSource?.id || state.mapName || '—');
     setText('app-title', title);
     setText('map-name', subtitle);
     $('app-subtitle').classList.toggle('hidden', !subtitle || state.raceMode);
     document.title = state.raceMode ? title : `${title}${subtitle && subtitle !== '—' ? ` · ${subtitle}` : ''}`;
+  }
+
+  function updateModeLayout() {
+    document.querySelector('.stats')?.classList.toggle('hidden', state.raceMode);
   }
 
   function updateRaceSwitchMenu() {
@@ -1641,8 +1649,11 @@
       const b = bearingDeg(state.me.lat, state.me.lon, target.lat, target.lon);
       setText('range', `${formatDistance(d)} · ${Math.round(b)}°`);
     } else setText('range', state.me ? 'no racers' : 'waiting GPS');
-    const taskInfo = state.flymasterTaskId ? ` · Flymaster task ${state.flymasterTaskId}` : '';
-    setText('info', `Race: ${state.race?.name || '—'} · ${state.racers.length} racers · ${supportedSourceSummary()} sources${taskInfo}`);
+    const updated = state.lastRaceUpdateAt ? formatAge(Date.now() - state.lastRaceUpdateAt) : '—';
+    const extras = [];
+    if (stale) extras.push(`${stale} stale`);
+    if (conflicts) extras.push(`${conflicts} conflict`);
+    setText('info', `${state.racers.length} racers · ${supportedSourceSummary()} sources · updated ${updated}${extras.length ? ` · ${extras.join(' · ')}` : ''}`);
     updateFitButton();
   }
 
@@ -1663,6 +1674,12 @@
     if (bounds.length) state.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
   }
 
+  function fitRaceRacersOnly() {
+    const targets = raceFitTargets();
+    if (!targets.length) return;
+    state.map.fitBounds(targets.map((r) => [r.lat, r.lon]), { padding: [40, 40], maxZoom: 16 });
+  }
+
   function toggleSelectedRacer(id) {
     if (!id || !state.raceMode) return;
     if (state.selectedRacerIds.has(id)) state.selectedRacerIds.delete(id);
@@ -1675,8 +1692,18 @@
   }
 
   function updateFitButton() {
-    $('fit-both').textContent = state.raceMode && state.selectedRacerIds.size ? 'Fit selected' : state.raceMode ? 'Fit all' : 'Fit both';
-    $('center-racer').textContent = state.raceMode ? 'Racers' : 'Racer';
+    if (state.raceMode) {
+      const followed = state.selectedRacerIds.size > 0;
+      $('fit-both').textContent = followed ? 'Fit followed' : 'Fit race';
+      $('fit-both').title = followed ? 'Fit followed racers and your location' : 'Fit all racers and your location';
+      $('center-racer').textContent = followed ? 'Followed racers' : 'All racers';
+      $('center-racer').title = followed ? 'Fit followed racers only' : 'Fit all racers only';
+      return;
+    }
+    $('fit-both').textContent = 'Fit both';
+    $('fit-both').title = 'Fit racer and your location';
+    $('center-racer').textContent = 'Racer';
+    $('center-racer').title = 'Center racer';
   }
 
   function supportedSourceSummary() {
@@ -1698,7 +1725,7 @@
     else centerRacer();
   }
 
-  function centerRacer() { if (state.raceMode) return fitRaceTargets(); if (state.racer) state.map.setView([state.racer.lat, state.racer.lon], Math.max(state.map.getZoom(), 15)); }
+  function centerRacer() { if (state.raceMode) return fitRaceRacersOnly(); if (state.racer) state.map.setView([state.racer.lat, state.racer.lon], Math.max(state.map.getZoom(), 15)); }
   function centerMe() { if (state.me) state.map.setView([state.me.lat, state.me.lon], Math.max(state.map.getZoom(), 15)); }
   function maybeInitialFit() { if (state.raceMode) { if (!state.firstFitDone && racePositions().length) { fitRaceTargets(); state.firstFitDone = true; } return; } if (!state.firstFitDone && state.racer && state.me) { fitBoth(); state.firstFitDone = true; } else if (!state.firstFitDone && state.racer) centerRacer(); }
 
