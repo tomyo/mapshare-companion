@@ -534,8 +534,11 @@
     const selected = state.selectedRacerIds.has(racer.id);
     const trackVisible = state.visibleRaceTrackIds.has(racer.id);
     const hasTrack = !!(r.history && r.history.length > 1);
+    const stale = isPositionStale(r);
+    const sourceLabel = `${r.sourceLabel || sourceTypeLabel(r.sourceType)}${stale ? ' (stale)' : ''}`;
+    const staleWarning = stale ? `<br><b>⚠ Stale position</b>: last ${escapeHtml(sourceTypeLabel(r.sourceType))} update is older than ${sourceStaleThresholdMin(r.sourceType)} min` : '';
     const conflict = racer.sourceConflict ? `<br><b>⚠ Source conflict</b>: ${escapeHtml(racer.sourceConflict.message)}` : '';
-    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(r.sourceLabel || sourceTypeLabel(r.sourceType))}${conflict}${sourceDiagnosticsHtml(racer)}`;
+    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(sourceLabel)}${staleWarning}${conflict}${sourceDiagnosticsHtml(racer)}`;
     const trackButton = hasTrack
       ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide active track' : 'Show active track'}</button>`
       : '<button type="button" disabled title="The active source has not published enough history points for this racer yet">No active track</button>';
@@ -552,9 +555,10 @@
       const staleLabel = stale ? ` · stale >${sourceStaleThresholdMin(source.type)} min` : '';
       const errorLabel = source.lastError && !latest ? `error: ${source.lastError}` : '';
       const status = latest ? `${formatUpdatedTime(latest)}${staleLabel}${distance}` : errorLabel || 'no data yet';
-      const color = active ? '#16a34a' : stale ? '#b45309' : latest ? '#475569' : '#991b1b';
+      const color = active && !stale ? '#16a34a' : active && stale ? '#b45309' : stale ? '#b45309' : latest ? '#475569' : '#991b1b';
       const label = sourceDisplayLabel(source);
-      return `<div style="margin-top:2px"><span style="display:inline-block;width:.65em;height:.65em;border-radius:50%;background:${color};margin-right:4px"></span><b>${escapeHtml(label)}</b>${active ? ' · active' : ''} · ${escapeHtml(status)}</div>`;
+      const activeText = active ? (stale ? ' · shown on map (stale)' : ' · shown on map') : '';
+      return `<div style="margin-top:2px"><span style="display:inline-block;width:.65em;height:.65em;border-radius:50%;background:${color};margin-right:4px"></span><b>${escapeHtml(label)}</b>${activeText} · ${escapeHtml(status)}</div>`;
     }).join('');
     return `<br><div style="margin-top:6px"><b>Sources</b>${rows}</div>`;
   }
