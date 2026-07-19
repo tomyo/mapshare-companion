@@ -33,7 +33,7 @@ export default async function handler(request) {
       status: 200,
       headers: {
         'content-type': 'application/json; charset=utf-8',
-        'cache-control': 's-maxage=150, stale-while-revalidate=120',
+        'cache-control': 'public, s-maxage=150, stale-while-revalidate=120',
         'access-control-allow-origin': '*',
       },
     });

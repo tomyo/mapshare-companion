@@ -30,7 +30,7 @@ export default async function handler(request) {
       status: 200,
       headers: {
         'content-type': 'application/json; charset=utf-8',
-        'cache-control': type === 'group' ? 's-maxage=60, stale-while-revalidate=300' : type === 'task' ? 's-maxage=300, stale-while-revalidate=3600' : 's-maxage=15, stale-while-revalidate=30',
+        'cache-control': type === 'group' ? 'public, s-maxage=60, stale-while-revalidate=300' : type === 'task' ? 'public, s-maxage=300, stale-while-revalidate=3600' : 'public, s-maxage=15, stale-while-revalidate=30',
         'access-control-allow-origin': '*',
       },
     });

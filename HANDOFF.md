@@ -91,7 +91,7 @@ This allows `/nhayes` to load the app while preserving `/api/garmin`.
 
 ## Garmin proxy API
 
-The browser calls the local Vercel API to avoid Garmin CORS:
+The browser calls the local Vercel API to avoid Garmin CORS. API URLs are intentionally stable (no timestamp cache-buster) so Vercel can share cached responses across viewers via `s-maxage` headers:
 
 ```text
 /api/garmin?name=<mapshare-name>&type=feed
@@ -109,7 +109,7 @@ https://share.garmin.com/<mapshare-name>/routes/
 https://share.garmin.com/<mapshare-name>/Collections
 ```
 
-MapShare names are restricted to `^[A-Za-z0-9_-]{1,100}$`.
+MapShare names are restricted to `^[A-Za-z0-9_-]{1,100}$`. Garmin feed responses use `public, s-maxage=30, stale-while-revalidate=30`; waypoints/routes/collections use `public, s-maxage=300, stale-while-revalidate=1800`. SPOT stays at `s-maxage=150`.
 
 ## Race roster / provider model
 

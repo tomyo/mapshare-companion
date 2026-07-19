@@ -23,7 +23,7 @@ export default async function handler(request) {
         'accept': type === 'feed' ? 'application/vnd.google-earth.kml+xml,text/xml,*/*' : 'application/json,*/*',
         'user-agent': 'Mozilla/5.0 MapShareCompanion/0.1',
       },
-      cf: { cacheTtl: type === 'feed' ? 15 : 60, cacheEverything: false },
+      cf: { cacheTtl: type === 'feed' ? 30 : 300, cacheEverything: false },
     });
 
     const body = await res.text();
@@ -35,7 +35,7 @@ export default async function handler(request) {
       status: 200,
       headers: {
         'content-type': contentType(type),
-        'cache-control': type === 'feed' ? 's-maxage=15, stale-while-revalidate=30' : 's-maxage=60, stale-while-revalidate=300',
+        'cache-control': type === 'feed' ? 'public, s-maxage=30, stale-while-revalidate=30' : 'public, s-maxage=300, stale-while-revalidate=1800',
         'access-control-allow-origin': '*',
       },
     });

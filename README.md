@@ -119,7 +119,7 @@ The app uses Edge Function proxies:
 /api/flymaster?type=trace&grp=<group-id>&p=<pilot-sn>&d=<flymaster-timestamp>
 ```
 
-That avoids Garmin/SPOT CORS problems and works directly in Chrome mobile without bookmarklets.
+That avoids Garmin/SPOT CORS problems and works directly in Chrome mobile without bookmarklets. Garmin/SPOT/Flymaster proxy responses use stable URLs plus Vercel shared-cache headers (`s-maxage`) so multiple race viewers can reuse recent responses instead of every browser hitting upstream services independently.
 
 ## Handoff / project spec
 

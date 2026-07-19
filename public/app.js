@@ -664,7 +664,7 @@
   }
 
   function apiUrlForName(name, type, options = {}) {
-    const params = new URLSearchParams({ name, type, _: String(Date.now()) });
+    const params = new URLSearchParams({ name, type });
     if (options.d1) params.set('d1', options.d1);
     if (options.d2) params.set('d2', options.d2);
     return `/api/garmin?${params}`;
@@ -675,19 +675,19 @@
   }
 
   function flymasterApiUrl(type, params = {}) {
-    const query = new URLSearchParams({ type, _: String(Date.now()) });
+    const query = new URLSearchParams({ type });
     for (const [key, value] of Object.entries(params)) query.set(key, String(value));
     return `/api/flymaster?${query}`;
   }
 
   async function fetchText(url) {
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.text();
   }
 
   async function fetchJson(url) {
-    const res = await fetch(url, { cache: 'no-store', headers: { accept: 'application/json' } });
+    const res = await fetch(url, { headers: { accept: 'application/json' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }
