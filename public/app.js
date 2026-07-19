@@ -1378,7 +1378,7 @@
     state.measureStart = { lat, lon, title };
     state.measurePopup = L.popup({ closeOnClick: false, autoClose: false })
       .setLatLng([lat, lon])
-      .setContent(`<b>Measuring from</b><br>${escapeHtml(title)}<br>${lat.toFixed(6)}, ${lon.toFixed(6)}<br><span class="measure-hint">Tap the map to update the endpoint. Close this popup to stop.</span>`);
+      .setContent(`<b>Measuring from</b><br>${escapeHtml(title)}<br>${lat.toFixed(6)}, ${lon.toFixed(6)}<br><span class="measure-hint">Tap the map to update the endpoint.<br>Close this popup to stop.</span>`);
     const popup = state.measurePopup;
     popup.on('remove', () => {
       if (state.measurePopup === popup) {
