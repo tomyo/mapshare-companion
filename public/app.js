@@ -18,6 +18,8 @@ import { useL10n } from '/vendor/use-l10n.js';
   const STALE_AFTER_MIN = 15;
   const SOURCE_STALE_MIN = { flymaster: 5, 'garmin-mapshare': 15, spot: 30 };
   const SOURCE_CONFLICT_DISTANCE_M = 1000;
+  const TRACK_SPIKE_MIN_M = 700;
+  const TRACK_GAP_M = 2500;
   const FLYMASTER_WS_URL = 'wss://lb.flymaster.net:8081';
   const FLYMASTER_EPOCH_MS = Date.UTC(2000, 0, 1);
   const LANGUAGES = ['en', 'es', 'br'];
@@ -70,8 +72,8 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.accuracy': 'Accuracy',
       'popup.measureFromHere': 'Measure from here',
       'measure.from': 'Measuring from',
-      'measure.hint': 'Tap the map to update the endpoint.<br>Close this popup to stop.',
-      'measure.info': 'Measuring: tap the map to choose or update the second point.',
+      'measure.hint': 'Tap the map or a racer to update the endpoint.<br>Close this popup to stop.',
+      'measure.info': 'Measuring: tap the map or a racer to choose or update the second point.',
       'measure.distance': 'Measured distance: {distance}',
       'kml.imported': 'Imported KML',
       'kml.shared': 'Shared KML',
@@ -169,8 +171,8 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.accuracy': 'Precisión',
       'popup.measureFromHere': 'Medir desde aquí',
       'measure.from': 'Midiendo desde',
-      'measure.hint': 'Toca el mapa para actualizar el punto final.<br>Cierra este popup para terminar.',
-      'measure.info': 'Midiendo: toca el mapa para elegir o actualizar el segundo punto.',
+      'measure.hint': 'Toca el mapa o un corredor para actualizar el punto final.<br>Cierra este popup para terminar.',
+      'measure.info': 'Midiendo: toca el mapa o un corredor para elegir o actualizar el segundo punto.',
       'measure.distance': 'Distancia medida: {distance}',
       'kml.imported': 'KML importado',
       'kml.shared': 'KML compartido',
@@ -268,8 +270,8 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.accuracy': 'Precisão',
       'popup.measureFromHere': 'Medir daqui',
       'measure.from': 'Medindo a partir de',
-      'measure.hint': 'Toque no mapa para atualizar o ponto final.<br>Feche este popup para parar.',
-      'measure.info': 'Medindo: toque no mapa para escolher ou atualizar o segundo ponto.',
+      'measure.hint': 'Toque no mapa ou em um atleta para atualizar o ponto final.<br>Feche este popup para parar.',
+      'measure.info': 'Medindo: toque no mapa ou em um atleta para escolher ou atualizar o segundo ponto.',
       'measure.distance': 'Distância medida: {distance}',
       'kml.imported': 'KML importado',
       'kml.shared': 'KML compartilhado',
@@ -932,6 +934,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       let marker = state.racerMarkers.get(racer.id);
       if (!marker) {
         marker = L.marker(ll, { icon, zIndexOffset: selected ? 4500 : 4000, title: raceMarkerTitle(racer), bubblingMouseEvents: false }).addTo(state.layers);
+        marker.on('click', (event) => handleMeasurableMarkerClick(marker, event));
         state.racerMarkers.set(racer.id, marker);
       } else {
         marker.setLatLng(ll);
@@ -960,7 +963,8 @@ import { useL10n } from '/vendor/use-l10n.js';
     const r = racer.position;
     const selected = state.selectedRacerIds.has(racer.id);
     const trackVisible = state.visibleRaceTrackIds.has(racer.id);
-    const hasTrack = !!(r.history && r.history.length > 1);
+    const defaultTrack = defaultTrackCandidate(racer);
+    const hasTrack = !!defaultTrack;
     const stale = isPositionStale(r);
     const sourceLabel = `${r.sourceLabel || sourceTypeLabel(r.sourceType)}${stale ? ' (stale)' : ''}`;
     const staleWarning = stale ? `<br><b>⚠ Stale position</b>: last ${escapeHtml(sourceTypeLabel(r.sourceType))} update is older than ${sourceStaleThresholdMin(r.sourceType)} min` : '';
@@ -998,51 +1002,108 @@ import { useL10n } from '/vendor/use-l10n.js';
 
   function sourceTrackButtonsHtml(racer, trackVisible) {
     if (!trackVisible || !racer.sources || racer.sources.length <= 1) return '';
-    const activeSource = racer.sources.find((source) => isActiveSource(racer.position, source));
-    const activeLabel = sourceDisplayLabel(activeSource || { type: racer.position?.sourceType });
-    const otherSources = racer.sources.filter((source) => source !== activeSource);
+    const defaultTrack = defaultTrackCandidate(racer);
+    const defaultSource = defaultTrack?.source || null;
+    const defaultLabel = defaultTrack?.label || 'track';
+    const otherSources = racer.sources.filter((source) => source !== defaultSource);
     const buttons = otherSources.map((source) => {
       const key = sourceTrackKey(racer.id, source);
-      const history = source.latestPosition?.history || [];
+      const history = sourceTrackHistory(racer, source);
       const visible = state.visibleRaceTrackIds.has(key);
       const label = sourceDisplayLabel(source);
       if (history.length < 2) return `<button type="button" disabled title="No ${escapeHtml(label)} track yet">No ${escapeHtml(label)} track</button>`;
       return `<button type="button" data-toggle-source-track="${escapeHtml(key)}" data-source-track-racer="${escapeHtml(racer.id)}">${visible ? 'Hide' : 'Show'} ${escapeHtml(label)} track</button>`;
     }).join('');
-    return `<div class="map-popup-actions source-track-actions"><b style="width:100%;font-size:12px;color:#475569">Showing active ${escapeHtml(activeLabel)} track</b>${buttons || '<span style="font-size:12px;color:#64748b">No alternate source tracks available yet</span>'}</div>`;
+    return `<div class="map-popup-actions source-track-actions"><b style="width:100%;font-size:12px;color:#475569">Showing ${escapeHtml(defaultLabel)} track</b>${buttons || '<span style="font-size:12px;color:#64748b">No alternate source tracks available yet</span>'}</div>`;
   }
 
   function sourceTrackKey(racerId, source) {
     return `${racerId}::${source.type}::${encodeURIComponent(source.name || source.id || source.raw || '')}`;
   }
 
+  function defaultTrackCandidate(racer) {
+    const candidates = (racer.sources || []).map((source) => ({ source, history: sourceTrackHistory(racer, source), label: sourceDisplayLabel(source) }))
+      .filter((item) => item.history.length >= 2);
+    return candidates.find((item) => item.source.type === 'flymaster')
+      || candidates.find((item) => isActiveSource(racer.position, item.source))
+      || (racer.position?.history?.length >= 2 ? { source: null, history: racer.position.history, label: racer.position.sourceLabel || sourceTypeLabel(racer.position.sourceType) } : null)
+      || candidates[0]
+      || null;
+  }
+
+  function sourceTrackHistory(racer, source) {
+    const history = source?.latestPosition?.history || [];
+    if (history.length >= 2) return history;
+    if (source && isActiveSource(racer.position, source) && racer.position?.history?.length >= 2) return racer.position.history;
+    return [];
+  }
+
   function renderRaceTracks() {
     if (!state.raceTrackLayer) return;
     state.raceTrackLayer.clearLayers();
     for (const racer of state.racers) {
-      const activeHistory = racer.position?.history || [];
-      if (state.visibleRaceTrackIds.has(racer.id) && activeHistory.length >= 2) {
-        L.polyline(activeHistory.map((p) => [p.lat, p.lon]), {
-          color: racerColor(racer.id),
-          weight: 5,
-          opacity: 0.9,
-        }).bindPopup(`<b>${escapeHtml(racer.name)} active track</b><br>${escapeHtml(racer.position.sourceLabel || sourceTypeLabel(racer.position.sourceType))}<br>${activeHistory.length} points`).addTo(state.raceTrackLayer);
+      const defaultTrack = defaultTrackCandidate(racer);
+      if (state.visibleRaceTrackIds.has(racer.id) && defaultTrack) {
+        drawTrackSegments(defaultTrack.history, defaultTrackStyle(racer), `<b>${escapeHtml(racer.name)} ${escapeHtml(defaultTrack.label)} track</b><br>${defaultTrack.history.length} points`);
       }
       for (const source of racer.sources || []) {
         const key = sourceTrackKey(racer.id, source);
-        const history = source.latestPosition?.history || [];
+        const history = sourceTrackHistory(racer, source);
         if (!state.visibleRaceTrackIds.has(key) || history.length < 2) continue;
-        L.polyline(history.map((p) => [p.lat, p.lon]), sourceTrackStyle(racer, source))
-          .bindPopup(`<b>${escapeHtml(racer.name)} ${escapeHtml(sourceDisplayLabel(source))} track</b><br>${history.length} points`)
-          .addTo(state.raceTrackLayer);
+        drawTrackSegments(history, sourceTrackStyle(racer, source), `<b>${escapeHtml(racer.name)} ${escapeHtml(sourceDisplayLabel(source))} track</b><br>${history.length} points`);
       }
     }
   }
 
+  function drawTrackSegments(history, style, popupHtml) {
+    for (const segment of trackSegments(history)) {
+      if (segment.length < 2) continue;
+      L.polyline(segment.map((p) => [p.lat, p.lon]), style).bindPopup(popupHtml).addTo(state.raceTrackLayer);
+    }
+  }
+
+  function trackSegments(history) {
+    const points = cleanTrackHistory(history);
+    const segments = [];
+    let current = [];
+    for (const point of points) {
+      const previous = current[current.length - 1];
+      if (previous && distanceM(previous.lat, previous.lon, point.lat, point.lon) > TRACK_GAP_M) {
+        if (current.length >= 2) segments.push(current);
+        current = [];
+      }
+      current.push(point);
+    }
+    if (current.length >= 2) segments.push(current);
+    return segments;
+  }
+
+  function cleanTrackHistory(history) {
+    const points = dedupeLatLon((history || []).filter((p) => Number.isFinite(p?.lat) && Number.isFinite(p?.lon)));
+    if (points.length < 3) return points;
+    const out = [points[0]];
+    for (let i = 1; i < points.length - 1; i += 1) {
+      const a = out[out.length - 1];
+      const b = points[i];
+      const c = points[i + 1];
+      const ab = distanceM(a.lat, a.lon, b.lat, b.lon);
+      const bc = distanceM(b.lat, b.lon, c.lat, c.lon);
+      const ac = distanceM(a.lat, a.lon, c.lat, c.lon);
+      if (ab > TRACK_SPIKE_MIN_M && bc > TRACK_SPIKE_MIN_M && ac < Math.max(TRACK_SPIKE_MIN_M, Math.min(ab, bc) * 0.35)) continue;
+      out.push(b);
+    }
+    out.push(points[points.length - 1]);
+    return out;
+  }
+
+  function defaultTrackStyle(racer) {
+    return { color: racerColor(racer.id), weight: 2, opacity: 0.88, lineCap: 'round', lineJoin: 'round' };
+  }
+
   function sourceTrackStyle(racer, source) {
-    const style = { color: racerColor(racer.id), weight: 3, opacity: 0.72 };
+    const style = { color: racerColor(racer.id), weight: 2, opacity: 0.62, lineCap: 'round', lineJoin: 'round' };
     if (source.type === 'garmin-mapshare') style.dashArray = '8 6';
-    else if (source.type === 'spot') style.dashArray = '2 8';
+    else if (source.type === 'spot') style.dashArray = '2 7';
     else if (source.type === 'flymaster') style.dashArray = '';
     return style;
   }
@@ -1288,7 +1349,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       .map((source) => ({ source, position: clonePosition(source.latestPosition), stale: isSourcePositionStale(source, source.latestPosition) }));
     const best = chooseBestSourceCandidate(candidates);
     const latest = best?.position || null;
-    if (latest) latest.history = mergePositionHistory(racer.position, latest);
+    if (latest && samePositionSource(racer.position, latest)) latest.history = mergePositionHistory(racer.position, latest);
     racer.position = latest;
     racer.sourceConflict = latest ? detectSourceConflict(best, candidates) : null;
     racer.error = candidates.length ? '' : racer.error;
@@ -1297,9 +1358,19 @@ import { useL10n } from '/vendor/use-l10n.js';
   function chooseBestSourceCandidate(candidates) {
     const valid = candidates.filter((item) => Number.isFinite(item.position?.lat) && Number.isFinite(item.position?.lon));
     const fresh = valid.filter((item) => !item.stale);
-    const pool = fresh.length ? fresh : valid;
-    pool.sort((a, b) => (b.position.utcMs || 0) - (a.position.utcMs || 0));
-    return pool[0] || null;
+    return newestSourceCandidate(fresh.filter((item) => item.source.type === 'flymaster'))
+      || newestSourceCandidate(fresh)
+      || newestSourceCandidate(valid.filter((item) => item.source.type === 'flymaster'))
+      || newestSourceCandidate(valid)
+      || null;
+  }
+
+  function newestSourceCandidate(candidates) {
+    return candidates.slice().sort((a, b) => (b.position.utcMs || 0) - (a.position.utcMs || 0))[0] || null;
+  }
+
+  function samePositionSource(a, b) {
+    return !!(a && b && a.sourceType === b.sourceType && String(a.sourceName || '') === String(b.sourceName || ''));
   }
 
   function isSourcePositionStale(source, position) {
@@ -1705,8 +1776,10 @@ import { useL10n } from '/vendor/use-l10n.js';
       className: 'racer-icon-wrap', iconSize: [38, 38], iconAnchor: [19, 19], popupAnchor: [0, -20],
       html: `<div class="racer-icon"><div class="racer-arrow" style="transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div>`,
     });
-    if (!state.racerMarker) state.racerMarker = L.marker(ll, { icon, zIndexOffset: 4000, title: r.name, bubblingMouseEvents: false }).addTo(state.layers);
-    else { state.racerMarker.setLatLng(ll); state.racerMarker.setIcon(icon); }
+    if (!state.racerMarker) {
+      state.racerMarker = L.marker(ll, { icon, zIndexOffset: 4000, title: r.name, bubblingMouseEvents: false }).addTo(state.layers);
+      state.racerMarker.on('click', (event) => handleMeasurableMarkerClick(state.racerMarker, event));
+    } else { state.racerMarker.setLatLng(ll); state.racerMarker.setIcon(icon); }
     state.racerMarker.bindPopup(locationPopupHtml(r.name, r.lat, r.lon, `${t('popup.speed')}: ${escapeHtml(r.speedText)}<br>${t('popup.elev')}: ${formatElevation(r.ele)}<br>${t('popup.course')}: ${escapeHtml(r.courseText)}<br>${t('popup.updated')}: ${escapeHtml(formatUpdatedTime(r))}`));
     if (r.history) state.racerTrail.setLatLngs(r.history.map((p) => [p.lat, p.lon]));
     updateSourceFeaturesMenu();
@@ -1752,8 +1825,10 @@ import { useL10n } from '/vendor/use-l10n.js';
       className: 'me-icon-wrap', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -18],
       html: `<div class="me-icon"><div class="me-arrow" style="transform:rotate(${Number.isFinite(m.heading) ? m.heading : 0}deg);opacity:${Number.isFinite(m.heading) ? 1 : 0.25}"></div></div>`,
     });
-    if (!state.meMarker) state.meMarker = L.marker(ll, { icon, zIndexOffset: 5000, title: t('popup.me'), bubblingMouseEvents: false }).addTo(state.layers);
-    else { state.meMarker.setLatLng(ll); state.meMarker.setIcon(icon); }
+    if (!state.meMarker) {
+      state.meMarker = L.marker(ll, { icon, zIndexOffset: 5000, title: t('popup.me'), bubblingMouseEvents: false }).addTo(state.layers);
+      state.meMarker.on('click', (event) => handleMeasurableMarkerClick(state.meMarker, event));
+    } else { state.meMarker.setLatLng(ll); state.meMarker.setIcon(icon); }
     const speed = m.speed == null ? '—' : `${(m.speed * 3.6).toFixed(1)} km/h`;
     const acc = m.accuracy == null ? '—' : `±${Math.round(m.accuracy)} m`;
     state.meMarker.bindPopup(locationPopupHtml(t('popup.me'), m.lat, m.lon, `${t('popup.accuracy')}: ${acc}<br>${t('popup.speed')}: ${speed}`));
@@ -1817,6 +1892,14 @@ import { useL10n } from '/vendor/use-l10n.js';
     });
     popup.addTo(state.map);
     setText('info', t('measure.info'));
+  }
+
+  function handleMeasurableMarkerClick(marker, event) {
+    if (!state.measureStart || !marker) return;
+    if (event?.originalEvent) L.DomEvent.stop(event.originalEvent);
+    const ll = marker.getLatLng();
+    updateMeasurement(ll.lat, ll.lng);
+    setTimeout(() => marker.closePopup(), 0);
   }
 
   function updateMeasurement(lat, lon) {
@@ -2300,7 +2383,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     const updated = r ? (r.utcMs ? formatAge(Date.now() - r.utcMs) : (r.time || r.timeUtc || '—')) : '';
     const status = r ? t('info.updated', { value: updated || '—' }) : (racer.error || t('list.noPosition'));
     const distance = state.me && r ? ` · ${formatDistance(distanceM(state.me.lat, state.me.lon, r.lat, r.lon))}` : '';
-    const hasTrack = !!(r?.history && r.history.length > 1);
+    const hasTrack = !!defaultTrackCandidate(racer);
     const trackVisible = state.visibleRaceTrackIds.has(racer.id);
     const trackButton = `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}" ${hasTrack ? '' : 'disabled'}>${hasTrack ? (trackVisible ? t('list.hideTrack') : t('list.showTrack')) : t('list.noTrack')}</button>`;
     return `<div class="racer-list-row ${followed ? 'followed' : ''} ${stale ? 'stale' : ''} ${conflict ? 'conflict' : ''}"><label><input type="checkbox" data-racer-follow="${escapeHtml(racer.id)}" ${followed ? 'checked' : ''}><span class="racer-list-dot" style="background:${racerColor(racer.id)}"></span><span class="racer-list-main"><b>${escapeHtml(racer.name)}</b><small>${escapeHtml(status)}${escapeHtml(distance)}</small></span></label><button type="button" data-racer-locate="${escapeHtml(racer.id)}" ${r ? '' : 'disabled'}>${t('list.map')}</button>${trackButton}</div>`;
