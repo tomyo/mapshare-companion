@@ -8,6 +8,7 @@ import { useL10n } from '/vendor/use-l10n.js';
   const KML_KEY = 'garminRaceTracker.importedKml';
   const SOURCE_FEATURES_KEY = 'garminRaceTracker.sourceFeaturesVisible';
   const LANGUAGE_KEY = 'garminRaceTracker.language';
+  const RACE_FIT_MODE_KEY = 'garminRaceTracker.raceFitMode';
   const TRANSCAPIXABA_PATH = '/race/transcapixaba-2026';
   const TRANSCAPIXABA_START = '2026-07-12T03:00:00Z';
   const TRANSCAPIXABA_END = '2026-07-26T02:59:59Z';
@@ -21,6 +22,7 @@ import { useL10n } from '/vendor/use-l10n.js';
   const FLYMASTER_EPOCH_MS = Date.UTC(2000, 0, 1);
   const LANGUAGES = ['en', 'es', 'br'];
   const LANGUAGE_LABELS = { en: 'EN', es: 'ES', br: 'BR' };
+  const RACE_FIT_MODES = ['race', 'followed', 'followed-me'];
   const LANGUAGE_NAMES = { en: 'English', es: 'Español', br: 'Português (BR)' };
   const TEXT = {
     en: {
@@ -99,6 +101,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       'basemap.button': '🗺️ {next}',
       'basemap.title': 'Map: {current}. Switch to {next}.',
       'fit.fitFollowed': 'Fit followed',
+      'fit.fitFollowedMe': 'Fit followed + me',
       'fit.fitRace': 'Fit race',
       'fit.fitBoth': 'Fit both',
       'fit.followedRacers': 'Followed racers',
@@ -194,6 +197,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       'basemap.button': '🗺️ {next}',
       'basemap.title': 'Mapa: {current}. Cambiar a {next}.',
       'fit.fitFollowed': 'Ajustar seguidos',
+      'fit.fitFollowedMe': 'Ajustar seguidos + yo',
       'fit.fitRace': 'Ajustar carrera',
       'fit.fitBoth': 'Ajustar ambos',
       'fit.followedRacers': 'Corredores seguidos',
@@ -289,6 +293,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       'basemap.button': '🗺️ {next}',
       'basemap.title': 'Mapa: {current}. Mudar para {next}.',
       'fit.fitFollowed': 'Ajustar seguidos',
+      'fit.fitFollowedMe': 'Ajustar seguidos + eu',
       'fit.fitRace': 'Ajustar prova',
       'fit.fitBoth': 'Ajustar ambos',
       'fit.followedRacers': 'Atletas seguidos',
@@ -349,6 +354,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     lastRaceUpdateAt: 0,
     racerListSort: 'proximity',
     racerListTouch: null,
+    raceFitMode: loadRaceFitMode(),
     sourceFeaturesVisible: true,
     sourceFeaturesDetected: false,
     sourceFeatureSource: null,
@@ -2023,6 +2029,7 @@ import { useL10n } from '/vendor/use-l10n.js';
 
   function updateModeLayout() {
     document.querySelector('.stats')?.classList.toggle('hidden', state.raceMode);
+    $('center-racer')?.classList.toggle('hidden', state.raceMode);
     $('racer-list')?.classList.toggle('hidden', !state.raceMode);
     if (!state.raceMode) closeRacerListPanel();
   }
@@ -2104,16 +2111,53 @@ import { useL10n } from '/vendor/use-l10n.js';
   }
 
   function fitRaceTargets() {
-    const targets = raceFitTargets();
-    const bounds = targets.map((r) => [r.lat, r.lon]);
-    if (state.me) bounds.push([state.me.lat, state.me.lon]);
-    if (bounds.length) state.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+    fitRaceMode(state.selectedRacerIds.size ? 'followed-me' : 'race');
   }
 
   function fitRaceRacersOnly() {
-    const targets = raceFitTargets();
-    if (!targets.length) return;
-    state.map.fitBounds(targets.map((r) => [r.lat, r.lon]), { padding: [40, 40], maxZoom: 16 });
+    fitRaceMode(state.selectedRacerIds.size ? 'followed' : 'race');
+  }
+
+  function raceFitModeTargets(mode) {
+    return mode === 'race' ? racePositions() : selectedRacePositions();
+  }
+
+  function raceFitModes() {
+    return state.selectedRacerIds.size ? RACE_FIT_MODES : ['race'];
+  }
+
+  function ensureRaceFitMode() {
+    const modes = raceFitModes();
+    if (!modes.includes(state.raceFitMode)) {
+      state.raceFitMode = modes[0];
+      saveRaceFitMode(state.raceFitMode);
+    }
+    return state.raceFitMode;
+  }
+
+  function nextRaceFitMode(mode = ensureRaceFitMode()) {
+    const modes = raceFitModes();
+    const index = modes.indexOf(mode);
+    return modes[(index + 1) % modes.length] || modes[0];
+  }
+
+  function fitRaceMode(mode = ensureRaceFitMode()) {
+    const fitMode = raceFitModes().includes(mode) ? mode : ensureRaceFitMode();
+    const targets = raceFitModeTargets(fitMode);
+    const bounds = targets.map((r) => [r.lat, r.lon]);
+    if (fitMode === 'followed-me' && state.me) bounds.push([state.me.lat, state.me.lon]);
+    if (bounds.length) state.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+  }
+
+  function cycleRaceFitMode() {
+    const mode = ensureRaceFitMode();
+    fitRaceMode(mode);
+    saveRaceFitMode(mode);
+    const next = nextRaceFitMode(mode);
+    if (next !== mode) {
+      state.raceFitMode = next;
+      updateFitButton();
+    }
   }
 
   function toggleSelectedRacer(id) {
@@ -2250,11 +2294,19 @@ import { useL10n } from '/vendor/use-l10n.js';
 
   function updateFitButton() {
     if (state.raceMode) {
-      const followed = state.selectedRacerIds.size > 0;
-      $('fit-both').textContent = followed ? t('fit.fitFollowed') : t('fit.fitRace');
-      $('fit-both').title = followed ? t('fit.fitFollowedTitle') : t('fit.fitRaceTitle');
-      $('center-racer').textContent = followed ? t('fit.followedRacers') : t('fit.allRacers');
-      $('center-racer').title = followed ? t('fit.followedOnlyTitle') : t('fit.allOnlyTitle');
+      const mode = ensureRaceFitMode();
+      const labels = {
+        race: t('fit.fitRace'),
+        followed: t('fit.fitFollowed'),
+        'followed-me': t('fit.fitFollowedMe'),
+      };
+      const titles = {
+        race: t('fit.allOnlyTitle'),
+        followed: t('fit.followedOnlyTitle'),
+        'followed-me': t('fit.fitFollowedTitle'),
+      };
+      $('fit-both').textContent = labels[mode];
+      $('fit-both').title = titles[mode];
       return;
     }
     $('fit-both').textContent = t('fit.fitBoth');
@@ -2276,7 +2328,7 @@ import { useL10n } from '/vendor/use-l10n.js';
   }
 
   function fitBoth() {
-    if (state.raceMode) return fitRaceTargets();
+    if (state.raceMode) return cycleRaceFitMode();
     if (!state.racer) return;
     if (state.me) state.map.fitBounds([[state.me.lat, state.me.lon], [state.racer.lat, state.racer.lon]], { padding: [40, 40], maxZoom: 16 });
     else centerRacer();
@@ -2610,6 +2662,9 @@ import { useL10n } from '/vendor/use-l10n.js';
   function saveBaseMapType(type) { try { localStorage.setItem(BASE_MAP_KEY, type); } catch (_) {} }
   function loadSourceFeaturesVisible() { try { return localStorage.getItem(SOURCE_FEATURES_KEY) !== 'false'; } catch (_) { return true; } }
   function saveSourceFeaturesVisible(value) { try { localStorage.setItem(SOURCE_FEATURES_KEY, value ? 'true' : 'false'); } catch (_) {} }
+  function normalizeRaceFitMode(mode) { return RACE_FIT_MODES.includes(mode) ? mode : 'race'; }
+  function loadRaceFitMode() { try { return normalizeRaceFitMode(localStorage.getItem(RACE_FIT_MODE_KEY)); } catch (_) { return 'race'; } }
+  function saveRaceFitMode(mode) { try { localStorage.setItem(RACE_FIT_MODE_KEY, normalizeRaceFitMode(mode)); } catch (_) {} }
   function selectedKey(raceId) { return `garminRaceTracker.selectedRacers.${raceId}`; }
   function loadSelectedRacers(raceId) { try { return new Set(JSON.parse(localStorage.getItem(selectedKey(raceId)) || '[]')); } catch (_) { return new Set(); } }
   function saveSelectedRacers(raceId, ids) { try { localStorage.setItem(selectedKey(raceId), JSON.stringify(Array.from(ids))); } catch (_) {} }
