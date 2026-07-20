@@ -53,6 +53,8 @@
     flymasterTaskId: '',
     flymasterTaskLoading: null,
     lastRaceUpdateAt: 0,
+    racerListSort: 'proximity',
+    racerListTouch: null,
     sourceFeaturesVisible: true,
     sourceFeaturesDetected: false,
     sourceFeatureSource: null,
@@ -146,8 +148,12 @@
   $('racer-list-close').addEventListener('click', closeRacerListPanel);
   $('racer-list-follow-all').addEventListener('click', followAllRacers);
   $('racer-list-clear').addEventListener('click', clearFollowedRacers);
+  $('racer-list-sort').addEventListener('click', toggleRacerListSort);
   $('racer-list-body').addEventListener('change', onRacerListChange);
   $('racer-list-body').addEventListener('click', onRacerListClick);
+  $('racer-list-panel').addEventListener('touchstart', onRacerListTouchStart, { passive: true });
+  $('racer-list-panel').addEventListener('touchmove', onRacerListTouchMove, { passive: false });
+  $('racer-list-panel').addEventListener('touchend', onRacerListTouchEnd);
   $('refresh').addEventListener('click', () => refreshAll());
   $('toggle-basemap').addEventListener('click', toggleBaseMap);
   $('toggle-kml').addEventListener('click', toggleKmlLayer);
@@ -1315,6 +1321,7 @@
     updateMeLayer();
     updateConnector();
     updatePanel();
+    renderRacerList();
     maybeInitialFit();
   }
 
@@ -1754,6 +1761,41 @@
     updateConnector();
   }
 
+  function toggleRacerListSort() {
+    state.racerListSort = state.racerListSort === 'proximity' ? 'az' : 'proximity';
+    renderRacerList();
+  }
+
+  function onRacerListTouchStart(event) {
+    const touch = event.touches && event.touches[0];
+    if (!touch) return;
+    state.racerListTouch = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      scrollTop: $('racer-list-body')?.scrollTop || 0,
+      closing: false,
+    };
+  }
+
+  function onRacerListTouchMove(event) {
+    const touch = event.touches && event.touches[0];
+    const start = state.racerListTouch;
+    if (!touch || !start) return;
+    const dx = touch.clientX - start.startX;
+    const dy = touch.clientY - start.startY;
+    const body = $('racer-list-body');
+    const atTop = !body || body.scrollTop <= 0;
+    if (atTop && dy > 8 && Math.abs(dy) > Math.abs(dx)) {
+      event.preventDefault();
+      if (dy > 70) start.closing = true;
+    }
+  }
+
+  function onRacerListTouchEnd() {
+    if (state.racerListTouch?.closing) closeRacerListPanel();
+    state.racerListTouch = null;
+  }
+
   function onRacerListChange(event) {
     const checkbox = event.target.closest('[data-racer-follow]');
     if (!checkbox) return;
@@ -1772,16 +1814,27 @@
     const followed = state.selectedRacerIds.size;
     const live = racePositions().length;
     setText('racer-list-summary', `${followed} followed · ${live}/${state.racers.length} live`);
-    const sorted = state.racers.slice().sort((a, b) => {
-      const af = state.selectedRacerIds.has(a.id) ? 0 : 1;
-      const bf = state.selectedRacerIds.has(b.id) ? 0 : 1;
-      if (af !== bf) return af - bf;
-      const as = a.sourceConflict ? 0 : isPositionStale(a.position) ? 1 : 2;
-      const bs = b.sourceConflict ? 0 : isPositionStale(b.position) ? 1 : 2;
-      if (as !== bs) return as - bs;
-      return a.name.localeCompare(b.name);
-    });
+    const sortButton = $('racer-list-sort');
+    if (sortButton) sortButton.textContent = state.racerListSort === 'proximity' ? 'Sort: proximity' : 'Sort: A→Z';
+    const sorted = state.racers.slice().sort(compareRacersForList);
     $('racer-list-body').innerHTML = sorted.map(racerListRowHtml).join('');
+  }
+
+  function compareRacersForList(a, b) {
+    if (state.racerListSort === 'az' || !state.me) return a.name.localeCompare(b.name);
+    const ad = racerDistanceFromMe(a);
+    const bd = racerDistanceFromMe(b);
+    if (ad == null && bd == null) return a.name.localeCompare(b.name);
+    if (ad == null) return 1;
+    if (bd == null) return -1;
+    if (ad !== bd) return ad - bd;
+    return a.name.localeCompare(b.name);
+  }
+
+  function racerDistanceFromMe(racer) {
+    const r = racer?.position;
+    if (!state.me || !r) return null;
+    return distanceM(state.me.lat, state.me.lon, r.lat, r.lon);
   }
 
   function racerListRowHtml(racer) {
