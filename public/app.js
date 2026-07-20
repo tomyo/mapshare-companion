@@ -119,6 +119,9 @@ import { useL10n } from '/vendor/use-l10n.js';
       'list.noPosition': 'no position yet',
       'list.stale': 'stale',
       'list.map': 'Map',
+      'list.showTrack': 'Show track',
+      'list.hideTrack': 'Hide track',
+      'list.noTrack': 'No track',
       'language.title': 'Language: {language}. Tap to switch.',
     },
     es: {
@@ -215,6 +218,9 @@ import { useL10n } from '/vendor/use-l10n.js';
       'list.noPosition': 'sin posición todavía',
       'list.stale': 'desactualizado',
       'list.map': 'Mapa',
+      'list.showTrack': 'Mostrar track',
+      'list.hideTrack': 'Ocultar track',
+      'list.noTrack': 'Sin track',
       'language.title': 'Idioma: {language}. Toca para cambiar.',
     },
     br: {
@@ -311,6 +317,9 @@ import { useL10n } from '/vendor/use-l10n.js';
       'list.noPosition': 'sem posição ainda',
       'list.stale': 'desatualizado',
       'list.map': 'Mapa',
+      'list.showTrack': 'Mostrar trilha',
+      'list.hideTrack': 'Ocultar trilha',
+      'list.noTrack': 'Sem trilha',
       'language.title': 'Idioma: {language}. Toque para trocar.',
     },
   };
@@ -1049,6 +1058,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     saveVisibleRaceTracks(state.race.id, state.visibleRaceTrackIds);
     renderRaceTracks();
     refreshOpenRacerPopup(id);
+    renderRacerList();
   }
 
   function clearSourceTracksForRacer(racerId) {
@@ -2287,9 +2297,13 @@ import { useL10n } from '/vendor/use-l10n.js';
     const followed = state.selectedRacerIds.has(racer.id);
     const stale = r ? isPositionStale(r) : false;
     const conflict = !!racer.sourceConflict;
-    const status = conflict ? `⚠ ${racer.sourceConflict.message}` : r ? `${r.sourceLabel || sourceTypeLabel(r.sourceType)} · ${formatUpdatedTime(r)}${stale ? ` · ${t('list.stale')}` : ''}` : (racer.error || t('list.noPosition'));
+    const updated = r ? (r.utcMs ? formatAge(Date.now() - r.utcMs) : (r.time || r.timeUtc || '—')) : '';
+    const status = r ? t('info.updated', { value: updated || '—' }) : (racer.error || t('list.noPosition'));
     const distance = state.me && r ? ` · ${formatDistance(distanceM(state.me.lat, state.me.lon, r.lat, r.lon))}` : '';
-    return `<div class="racer-list-row ${followed ? 'followed' : ''} ${stale ? 'stale' : ''} ${conflict ? 'conflict' : ''}"><label><input type="checkbox" data-racer-follow="${escapeHtml(racer.id)}" ${followed ? 'checked' : ''}><span class="racer-list-dot" style="background:${racerColor(racer.id)}"></span><span class="racer-list-main"><b>${escapeHtml(racer.name)}</b><small>${escapeHtml(status)}${escapeHtml(distance)}</small></span></label><button type="button" data-racer-locate="${escapeHtml(racer.id)}" ${r ? '' : 'disabled'}>${t('list.map')}</button></div>`;
+    const hasTrack = !!(r?.history && r.history.length > 1);
+    const trackVisible = state.visibleRaceTrackIds.has(racer.id);
+    const trackButton = `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}" ${hasTrack ? '' : 'disabled'}>${hasTrack ? (trackVisible ? t('list.hideTrack') : t('list.showTrack')) : t('list.noTrack')}</button>`;
+    return `<div class="racer-list-row ${followed ? 'followed' : ''} ${stale ? 'stale' : ''} ${conflict ? 'conflict' : ''}"><label><input type="checkbox" data-racer-follow="${escapeHtml(racer.id)}" ${followed ? 'checked' : ''}><span class="racer-list-dot" style="background:${racerColor(racer.id)}"></span><span class="racer-list-main"><b>${escapeHtml(racer.name)}</b><small>${escapeHtml(status)}${escapeHtml(distance)}</small></span></label><button type="button" data-racer-locate="${escapeHtml(racer.id)}" ${r ? '' : 'disabled'}>${t('list.map')}</button>${trackButton}</div>`;
   }
 
   function updateFitButton() {
