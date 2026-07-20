@@ -964,14 +964,13 @@ import { useL10n } from '/vendor/use-l10n.js';
       const conflict = !!racer.sourceConflict;
       const flying = isPositionFlying(r);
       const color = racerColor(racer.id);
-      const badge = conflict ? '⚠' : stale ? '!' : '';
-      const badgeTitle = conflict ? 'Source conflict' : stale ? 'Stale position' : '';
-      const badgeHtml = badge ? `<div class="racer-status-badge" title="${badgeTitle}" style="position:absolute;right:-5px;top:-7px;width:17px;height:17px;border-radius:50%;background:${conflict ? '#f97316' : '#64748b'};color:#fff;border:2px solid #fff;font:900 11px/13px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">${badge}</div>` : '';
-      const flyingBadgeHtml = flying ? `<div class="racer-flying-badge" title="${t('status.flying')}" style="position:absolute;left:-7px;top:-9px;width:21px;height:21px;border-radius:50%;background:#0284c7;color:#fff;border:2px solid #fff;font:900 12px/17px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">🪂</div>` : '';
+      const badge = conflict ? '!' : '';
+      const badgeTitle = conflict ? 'Source discrepancy' : '';
+      const badgeHtml = badge ? `<div class="racer-status-badge" title="${badgeTitle}" style="position:absolute;right:-5px;top:-7px;width:17px;height:17px;border-radius:50%;background:#f97316;color:#fff;border:2px solid #fff;font:900 11px/13px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">${badge}</div>` : '';
       const iconOpacity = stale ? 0.55 : 1;
       const icon = L.divIcon({
-        className: 'racer-icon-wrap', iconSize: [170, 38], iconAnchor: [19, 19], popupAnchor: [0, -20],
-        html: `<div class="racer-icon ${selected ? 'selected' : ''}" style="background:${color};opacity:${iconOpacity}">${badgeHtml}${flyingBadgeHtml}<div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="opacity:${iconOpacity}">${flying ? '🪂 ' : ''}${conflict ? '⚠ ' : stale ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
+        className: 'racer-icon-wrap', iconSize: [160, 32], iconAnchor: [14, 14], popupAnchor: [0, -18],
+        html: `<div class="racer-icon ${flying ? 'flying' : ''} ${selected ? 'selected' : ''}" style="${flying ? '' : `background:${color};`}opacity:${iconOpacity}">${badgeHtml}${flying ? '<span class="racer-flying-symbol">🪂</span>' : ''}<div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="opacity:${iconOpacity}">${conflict ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
       });
       let marker = state.racerMarkers.get(racer.id);
       if (!marker) {
@@ -984,7 +983,7 @@ import { useL10n } from '/vendor/use-l10n.js';
         marker.setZIndexOffset(selected ? 4500 : 4000);
         marker.options.title = raceMarkerTitle(racer);
       }
-      marker.bindPopup(raceRacerPopupHtml(racer));
+      marker.bindPopup(raceRacerPopupHtml(racer), { autoPan: false, keepInView: false });
     }
     for (const [id, marker] of state.racerMarkers.entries()) {
       if (!seen.has(id)) {
@@ -1818,14 +1817,14 @@ import { useL10n } from '/vendor/use-l10n.js';
     const r = state.racer;
     const ll = [r.lat, r.lon];
     const icon = L.divIcon({
-      className: 'racer-icon-wrap', iconSize: [38, 38], iconAnchor: [19, 19], popupAnchor: [0, -20],
+      className: 'racer-icon-wrap', iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -18],
       html: `<div class="racer-icon"><div class="racer-arrow" style="transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div>`,
     });
     if (!state.racerMarker) {
       state.racerMarker = L.marker(ll, { icon, zIndexOffset: 4000, title: r.name, bubblingMouseEvents: false }).addTo(state.layers);
       state.racerMarker.on('click', (event) => handleMeasurableMarkerClick(state.racerMarker, event));
     } else { state.racerMarker.setLatLng(ll); state.racerMarker.setIcon(icon); }
-    state.racerMarker.bindPopup(locationPopupHtml(r.name, r.lat, r.lon, `${t('popup.speed')}: ${escapeHtml(r.speedText)}<br>${t('popup.elev')}: ${formatElevation(r.ele)}<br>${t('popup.course')}: ${escapeHtml(r.courseText)}<br>${t('popup.updated')}: ${escapeHtml(formatUpdatedTime(r))}`));
+    state.racerMarker.bindPopup(locationPopupHtml(r.name, r.lat, r.lon, `${t('popup.speed')}: ${escapeHtml(r.speedText)}<br>${t('popup.elev')}: ${formatElevation(r.ele)}<br>${t('popup.course')}: ${escapeHtml(r.courseText)}<br>${t('popup.updated')}: ${escapeHtml(formatUpdatedTime(r))}`), { autoPan: false, keepInView: false });
     if (r.history) state.racerTrail.setLatLngs(r.history.map((p) => [p.lat, p.lon]));
     updateSourceFeaturesMenu();
     updateConnector();
@@ -1876,7 +1875,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     } else { state.meMarker.setLatLng(ll); state.meMarker.setIcon(icon); }
     const speed = m.speed == null ? '—' : `${(m.speed * 3.6).toFixed(1)} km/h`;
     const acc = m.accuracy == null ? '—' : `±${Math.round(m.accuracy)} m`;
-    state.meMarker.bindPopup(locationPopupHtml(t('popup.me'), m.lat, m.lon, `${t('popup.accuracy')}: ${acc}<br>${t('popup.speed')}: ${speed}`));
+    state.meMarker.bindPopup(locationPopupHtml(t('popup.me'), m.lat, m.lon, `${t('popup.accuracy')}: ${acc}<br>${t('popup.speed')}: ${speed}`), { autoPan: false, keepInView: false });
     if (!state.accuracyCircle) state.accuracyCircle = L.circle(ll, accuracyStyle(m.accuracy)).addTo(state.layers);
     else { state.accuracyCircle.setLatLng(ll); state.accuracyCircle.setRadius(m.accuracy || 0); }
   }
