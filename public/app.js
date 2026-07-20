@@ -357,7 +357,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     soloSource: null,
     map: null,
     baseLayer: null,
-    baseMapType: 'street',
+    baseMapType: 'topo',
     layers: null,
     featureLayers: null,
     waypointLayer: null,
@@ -681,6 +681,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       indexFlymasterSources();
       state.sourceFeatureSource = race.sourceFeatureSource;
       state.selectedRacerIds = loadSelectedRacers(race.id);
+      preferFollowedMeFitMode();
       state.visibleRaceTrackIds = loadVisibleRaceTracks(race.id);
       updateHeader();
       updateFitButton();
@@ -708,6 +709,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     state.racers = race.racers;
     state.sourceFeatureSource = null;
     state.selectedRacerIds = loadSelectedRacers(race.id);
+    preferFollowedMeFitMode();
     state.visibleRaceTrackIds = loadVisibleRaceTracks(race.id);
     try {
       const info = await fetchJson(flymasterApiUrl('group', { grp: spec.groupId }));
@@ -2318,6 +2320,12 @@ import { useL10n } from '/vendor/use-l10n.js';
     return state.raceFitMode;
   }
 
+  function preferFollowedMeFitMode() {
+    if (!state.selectedRacerIds.size) return;
+    state.raceFitMode = 'followed-me';
+    saveRaceFitMode(state.raceFitMode);
+  }
+
   function nextRaceFitMode(mode = ensureRaceFitMode()) {
     const modes = raceFitModes();
     const index = modes.indexOf(mode);
@@ -2350,8 +2358,10 @@ import { useL10n } from '/vendor/use-l10n.js';
 
   function setRacerFollowed(id, followed) {
     if (!id || !state.raceMode || !state.race) return;
+    const hadFollowed = state.selectedRacerIds.size > 0;
     if (followed) state.selectedRacerIds.add(id);
     else state.selectedRacerIds.delete(id);
+    if (!hadFollowed && state.selectedRacerIds.size) preferFollowedMeFitMode();
     saveSelectedRacers(state.race.id, state.selectedRacerIds);
     renderRaceRacers();
     refreshOpenRacerPopup(id);
@@ -2374,6 +2384,7 @@ import { useL10n } from '/vendor/use-l10n.js';
   function followAllRacers() {
     if (!state.raceMode || !state.race) return;
     state.selectedRacerIds = new Set(state.racers.map((racer) => racer.id));
+    preferFollowedMeFitMode();
     saveSelectedRacers(state.race.id, state.selectedRacerIds);
     renderRaceRacers();
     updatePanel();
@@ -2846,7 +2857,7 @@ import { useL10n } from '/vendor/use-l10n.js';
   function loadSavedMapName() { try { return sanitizeName(localStorage.getItem(STORE_KEY) || ''); } catch (_) { return ''; } }
   function saveMapName(name) { try { localStorage.setItem(STORE_KEY, name); } catch (_) {} }
   function clearSavedMapName() { try { localStorage.removeItem(STORE_KEY); } catch (_) {} }
-  function loadBaseMapType() { try { return localStorage.getItem(BASE_MAP_KEY) === 'topo' ? 'topo' : 'street'; } catch (_) { return 'street'; } }
+  function loadBaseMapType() { try { return localStorage.getItem(BASE_MAP_KEY) === 'street' ? 'street' : 'topo'; } catch (_) { return 'topo'; } }
   function saveBaseMapType(type) { try { localStorage.setItem(BASE_MAP_KEY, type); } catch (_) {} }
   function loadSourceFeaturesVisible() { try { return localStorage.getItem(SOURCE_FEATURES_KEY) !== 'false'; } catch (_) { return true; } }
   function saveSourceFeaturesVisible(value) { try { localStorage.setItem(SOURCE_FEATURES_KEY, value ? 'true' : 'false'); } catch (_) {} }
