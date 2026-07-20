@@ -1,10 +1,13 @@
-(() => {
+import { useL10n } from '/vendor/use-l10n.js';
+
+(async () => {
   'use strict';
 
   const STORE_KEY = 'garminRaceTracker.mapName';
   const BASE_MAP_KEY = 'garminRaceTracker.baseMap';
   const KML_KEY = 'garminRaceTracker.importedKml';
   const SOURCE_FEATURES_KEY = 'garminRaceTracker.sourceFeaturesVisible';
+  const LANGUAGE_KEY = 'garminRaceTracker.language';
   const TRANSCAPIXABA_PATH = '/race/transcapixaba-2026';
   const TRANSCAPIXABA_START = '2026-07-12T03:00:00Z';
   const TRANSCAPIXABA_END = '2026-07-26T02:59:59Z';
@@ -16,9 +19,300 @@
   const SOURCE_CONFLICT_DISTANCE_M = 1000;
   const FLYMASTER_WS_URL = 'wss://lb.flymaster.net:8081';
   const FLYMASTER_EPOCH_MS = Date.UTC(2000, 0, 1);
+  const LANGUAGES = ['en', 'es', 'br'];
+  const LANGUAGE_LABELS = { en: 'EN', es: 'ES', br: 'BR' };
+  const LANGUAGE_NAMES = { en: 'English', es: 'Español', br: 'Português (BR)' };
+  const TEXT = {
+    en: {
+      'setup.error.source': 'Paste a Garmin MapShare username/link or a FindMeSPOT feed ID/link.',
+      'status.loadingRace': 'Loading race…',
+      'status.loadingFlymaster': 'Loading Flymaster…',
+      'status.raceError': 'race error',
+      'status.flymasterError': 'Flymaster error',
+      'status.refreshing': 'refreshing…',
+      'status.feedError': 'feed error',
+      'status.flymasterLive': 'Flymaster live',
+      'status.connecting': 'connecting…',
+      'status.noGps': 'no GPS',
+      'status.gpsDenied': 'GPS denied',
+      'status.noGpsFix': 'no GPS fix',
+      'status.staleMinutes': 'stale {minutes} min',
+      'status.live': 'live',
+      'status.waitingGps': 'waiting GPS',
+      'status.noRacers': 'no racers',
+      'status.all': 'all',
+      'status.selected': '{count} selected',
+      'status.followed': '{count} followed',
+      'status.liveCount': '{live}/{total} live',
+      'status.staleCount': '{count} stale',
+      'status.conflictCount': '{count} conflict',
+      'info.updated': 'Updated: {value}',
+      'info.elev': 'Elev: {value} m',
+      'info.gpsFix': 'GPS fix: {value}',
+      'info.emergency': 'EMERGENCY',
+      'info.text': 'Text: {value}',
+      'info.phoneGps': 'Phone GPS: {value}',
+      'info.raceSummary': '{racers} racers · {sources} sources · updated {updated}{extras}',
+      'age.future': 'future',
+      'age.justNow': 'just now',
+      'age.minutesAgo': '{count} min ago',
+      'age.hoursAgo': '{count} h ago',
+      'age.daysAgo': '{count} d ago',
+      'popup.selectedLocation': 'Selected location',
+      'popup.me': 'Me',
+      'popup.speed': 'Speed',
+      'popup.elev': 'Elev',
+      'popup.course': 'Course',
+      'popup.updated': 'Updated',
+      'popup.source': 'Source',
+      'popup.accuracy': 'Accuracy',
+      'popup.measureFromHere': 'Measure from here',
+      'measure.from': 'Measuring from',
+      'measure.hint': 'Tap the map to update the endpoint.<br>Close this popup to stop.',
+      'measure.info': 'Measuring: tap the map to choose or update the second point.',
+      'measure.distance': 'Measured distance: {distance}',
+      'kml.imported': 'Imported KML',
+      'kml.shared': 'Shared KML',
+      'kml.opened': 'Opened KML',
+      'kml.feature': 'KML feature',
+      'kml.noFeatures': 'No points or lines found in KML.',
+      'kml.parseError': 'KML XML parse error.',
+      'kml.importFailed': 'KML import failed: {error}',
+      'kml.importInfo': 'Imported KML: {points} points, {lines} lines.',
+      'kml.hide': 'Hide KML',
+      'kml.show': 'Show KML',
+      'kml.counts': '{points} points, {lines} lines',
+      'menu.enterRace': 'Enter race',
+      'menu.leaveRace': 'Leave race mode',
+      'menu.enterRaceTitle': 'Enter Transcapixaba 2026 race mode',
+      'menu.leaveRaceTitle': 'Return to the launcher',
+      'features.raceTask': 'race task',
+      'features.garmin': 'Garmin features',
+      'features.hide': 'Hide {label}',
+      'features.show': 'Show {label}',
+      'features.raceTitle': '{turnpoints} turnpoints, {routes} route{task}',
+      'features.soloTitle': '{waypoints} waypoints, {routes} routes{history}',
+      'features.historyTrack': ', history track',
+      'features.flymasterTask': ' · Flymaster task {taskId}',
+      'basemap.topo': 'Topo',
+      'basemap.street': 'Street',
+      'basemap.button': '🗺️ {next}',
+      'basemap.title': 'Map: {current}. Switch to {next}.',
+      'fit.fitFollowed': 'Fit followed',
+      'fit.fitRace': 'Fit race',
+      'fit.fitBoth': 'Fit both',
+      'fit.followedRacers': 'Followed racers',
+      'fit.allRacers': 'All racers',
+      'fit.racer': 'Racer',
+      'fit.fitFollowedTitle': 'Fit followed racers and your location',
+      'fit.fitRaceTitle': 'Fit all racers and your location',
+      'fit.fitBothTitle': 'Fit racer and your location',
+      'fit.followedOnlyTitle': 'Fit followed racers only',
+      'fit.allOnlyTitle': 'Fit all racers only',
+      'fit.centerRacerTitle': 'Center racer',
+      'list.summary': '{followed} followed · {live}/{total} live',
+      'list.sortProximity': 'Sort: proximity',
+      'list.sortAz': 'Sort: A→Z',
+      'list.noPosition': 'no position yet',
+      'list.stale': 'stale',
+      'list.map': 'Map',
+      'language.title': 'Language: {language}. Tap to switch.',
+    },
+    es: {
+      'setup.error.source': 'Pega un usuario/enlace de Garmin MapShare o un ID/enlace de FindMeSPOT.',
+      'status.loadingRace': 'Cargando carrera…',
+      'status.loadingFlymaster': 'Cargando Flymaster…',
+      'status.raceError': 'error de carrera',
+      'status.flymasterError': 'error de Flymaster',
+      'status.refreshing': 'actualizando…',
+      'status.feedError': 'error de datos',
+      'status.flymasterLive': 'Flymaster en vivo',
+      'status.connecting': 'conectando…',
+      'status.noGps': 'sin GPS',
+      'status.gpsDenied': 'GPS denegado',
+      'status.noGpsFix': 'sin señal GPS',
+      'status.staleMinutes': 'desactualizado {minutes} min',
+      'status.live': 'en vivo',
+      'status.waitingGps': 'esperando GPS',
+      'status.noRacers': 'sin corredores',
+      'status.all': 'todos',
+      'status.selected': '{count} seleccionados',
+      'status.followed': '{count} seguidos',
+      'status.liveCount': '{live}/{total} en vivo',
+      'status.staleCount': '{count} desactualizados',
+      'status.conflictCount': '{count} conflictos',
+      'info.updated': 'Actualizado: {value}',
+      'info.elev': 'Alt.: {value} m',
+      'info.gpsFix': 'Señal GPS: {value}',
+      'info.emergency': 'EMERGENCIA',
+      'info.text': 'Texto: {value}',
+      'info.phoneGps': 'GPS del teléfono: {value}',
+      'info.raceSummary': '{racers} corredores · {sources} fuentes · actualizado {updated}{extras}',
+      'age.future': 'futuro',
+      'age.justNow': 'ahora',
+      'age.minutesAgo': 'hace {count} min',
+      'age.hoursAgo': 'hace {count} h',
+      'age.daysAgo': 'hace {count} d',
+      'popup.selectedLocation': 'Ubicación seleccionada',
+      'popup.me': 'Yo',
+      'popup.speed': 'Velocidad',
+      'popup.elev': 'Alt.',
+      'popup.course': 'Rumbo',
+      'popup.updated': 'Actualizado',
+      'popup.source': 'Fuente',
+      'popup.accuracy': 'Precisión',
+      'popup.measureFromHere': 'Medir desde aquí',
+      'measure.from': 'Midiendo desde',
+      'measure.hint': 'Toca el mapa para actualizar el punto final.<br>Cierra este popup para terminar.',
+      'measure.info': 'Midiendo: toca el mapa para elegir o actualizar el segundo punto.',
+      'measure.distance': 'Distancia medida: {distance}',
+      'kml.imported': 'KML importado',
+      'kml.shared': 'KML compartido',
+      'kml.opened': 'KML abierto',
+      'kml.feature': 'Elemento KML',
+      'kml.noFeatures': 'No se encontraron puntos ni líneas en el KML.',
+      'kml.parseError': 'Error al leer XML KML.',
+      'kml.importFailed': 'Falló la importación KML: {error}',
+      'kml.importInfo': 'KML importado: {points} puntos, {lines} líneas.',
+      'kml.hide': 'Ocultar KML',
+      'kml.show': 'Mostrar KML',
+      'kml.counts': '{points} puntos, {lines} líneas',
+      'menu.enterRace': 'Entrar a carrera',
+      'menu.leaveRace': 'Salir del modo carrera',
+      'menu.enterRaceTitle': 'Entrar al modo carrera Transcapixaba 2026',
+      'menu.leaveRaceTitle': 'Volver al inicio',
+      'features.raceTask': 'tarea de carrera',
+      'features.garmin': 'elementos Garmin',
+      'features.hide': 'Ocultar {label}',
+      'features.show': 'Mostrar {label}',
+      'features.raceTitle': '{turnpoints} balizas, {routes} ruta{task}',
+      'features.soloTitle': '{waypoints} waypoints, {routes} rutas{history}',
+      'features.historyTrack': ', track histórico',
+      'features.flymasterTask': ' · tarea Flymaster {taskId}',
+      'basemap.topo': 'Topo',
+      'basemap.street': 'Calle',
+      'basemap.button': '🗺️ {next}',
+      'basemap.title': 'Mapa: {current}. Cambiar a {next}.',
+      'fit.fitFollowed': 'Ajustar seguidos',
+      'fit.fitRace': 'Ajustar carrera',
+      'fit.fitBoth': 'Ajustar ambos',
+      'fit.followedRacers': 'Corredores seguidos',
+      'fit.allRacers': 'Todos los corredores',
+      'fit.racer': 'Corredor',
+      'fit.fitFollowedTitle': 'Ajustar corredores seguidos y tu ubicación',
+      'fit.fitRaceTitle': 'Ajustar todos los corredores y tu ubicación',
+      'fit.fitBothTitle': 'Ajustar corredor y tu ubicación',
+      'fit.followedOnlyTitle': 'Ajustar solo corredores seguidos',
+      'fit.allOnlyTitle': 'Ajustar solo todos los corredores',
+      'fit.centerRacerTitle': 'Centrar corredor',
+      'list.summary': '{followed} seguidos · {live}/{total} en vivo',
+      'list.sortProximity': 'Ordenar: proximidad',
+      'list.sortAz': 'Ordenar: A→Z',
+      'list.noPosition': 'sin posición todavía',
+      'list.stale': 'desactualizado',
+      'list.map': 'Mapa',
+      'language.title': 'Idioma: {language}. Toca para cambiar.',
+    },
+    br: {
+      'setup.error.source': 'Cole um usuário/link Garmin MapShare ou um ID/link FindMeSPOT.',
+      'status.loadingRace': 'Carregando prova…',
+      'status.loadingFlymaster': 'Carregando Flymaster…',
+      'status.raceError': 'erro na prova',
+      'status.flymasterError': 'erro no Flymaster',
+      'status.refreshing': 'atualizando…',
+      'status.feedError': 'erro no feed',
+      'status.flymasterLive': 'Flymaster ao vivo',
+      'status.connecting': 'conectando…',
+      'status.noGps': 'sem GPS',
+      'status.gpsDenied': 'GPS negado',
+      'status.noGpsFix': 'sem sinal GPS',
+      'status.staleMinutes': 'desatualizado {minutes} min',
+      'status.live': 'ao vivo',
+      'status.waitingGps': 'aguardando GPS',
+      'status.noRacers': 'sem atletas',
+      'status.all': 'todos',
+      'status.selected': '{count} selecionados',
+      'status.followed': '{count} seguidos',
+      'status.liveCount': '{live}/{total} ao vivo',
+      'status.staleCount': '{count} desatualizados',
+      'status.conflictCount': '{count} conflitos',
+      'info.updated': 'Atualizado: {value}',
+      'info.elev': 'Alt.: {value} m',
+      'info.gpsFix': 'Sinal GPS: {value}',
+      'info.emergency': 'EMERGÊNCIA',
+      'info.text': 'Texto: {value}',
+      'info.phoneGps': 'GPS do telefone: {value}',
+      'info.raceSummary': '{racers} atletas · {sources} fontes · atualizado {updated}{extras}',
+      'age.future': 'futuro',
+      'age.justNow': 'agora',
+      'age.minutesAgo': 'há {count} min',
+      'age.hoursAgo': 'há {count} h',
+      'age.daysAgo': 'há {count} d',
+      'popup.selectedLocation': 'Local selecionado',
+      'popup.me': 'Eu',
+      'popup.speed': 'Velocidade',
+      'popup.elev': 'Alt.',
+      'popup.course': 'Rumo',
+      'popup.updated': 'Atualizado',
+      'popup.source': 'Fonte',
+      'popup.accuracy': 'Precisão',
+      'popup.measureFromHere': 'Medir daqui',
+      'measure.from': 'Medindo a partir de',
+      'measure.hint': 'Toque no mapa para atualizar o ponto final.<br>Feche este popup para parar.',
+      'measure.info': 'Medindo: toque no mapa para escolher ou atualizar o segundo ponto.',
+      'measure.distance': 'Distância medida: {distance}',
+      'kml.imported': 'KML importado',
+      'kml.shared': 'KML compartilhado',
+      'kml.opened': 'KML aberto',
+      'kml.feature': 'Recurso KML',
+      'kml.noFeatures': 'Nenhum ponto ou linha encontrado no KML.',
+      'kml.parseError': 'Erro ao ler XML KML.',
+      'kml.importFailed': 'Falha ao importar KML: {error}',
+      'kml.importInfo': 'KML importado: {points} pontos, {lines} linhas.',
+      'kml.hide': 'Ocultar KML',
+      'kml.show': 'Mostrar KML',
+      'kml.counts': '{points} pontos, {lines} linhas',
+      'menu.enterRace': 'Entrar na prova',
+      'menu.leaveRace': 'Sair do modo prova',
+      'menu.enterRaceTitle': 'Entrar no modo prova Transcapixaba 2026',
+      'menu.leaveRaceTitle': 'Voltar para o início',
+      'features.raceTask': 'tarefa da prova',
+      'features.garmin': 'recursos Garmin',
+      'features.hide': 'Ocultar {label}',
+      'features.show': 'Mostrar {label}',
+      'features.raceTitle': '{turnpoints} pilões, {routes} rota{task}',
+      'features.soloTitle': '{waypoints} waypoints, {routes} rotas{history}',
+      'features.historyTrack': ', trilha histórica',
+      'features.flymasterTask': ' · tarefa Flymaster {taskId}',
+      'basemap.topo': 'Topo',
+      'basemap.street': 'Ruas',
+      'basemap.button': '🗺️ {next}',
+      'basemap.title': 'Mapa: {current}. Mudar para {next}.',
+      'fit.fitFollowed': 'Ajustar seguidos',
+      'fit.fitRace': 'Ajustar prova',
+      'fit.fitBoth': 'Ajustar ambos',
+      'fit.followedRacers': 'Atletas seguidos',
+      'fit.allRacers': 'Todos os atletas',
+      'fit.racer': 'Atleta',
+      'fit.fitFollowedTitle': 'Ajustar atletas seguidos e sua localização',
+      'fit.fitRaceTitle': 'Ajustar todos os atletas e sua localização',
+      'fit.fitBothTitle': 'Ajustar atleta e sua localização',
+      'fit.followedOnlyTitle': 'Ajustar apenas atletas seguidos',
+      'fit.allOnlyTitle': 'Ajustar apenas todos os atletas',
+      'fit.centerRacerTitle': 'Centralizar atleta',
+      'list.summary': '{followed} seguidos · {live}/{total} ao vivo',
+      'list.sortProximity': 'Ordenar: proximidade',
+      'list.sortAz': 'Ordenar: A→Z',
+      'list.noPosition': 'sem posição ainda',
+      'list.stale': 'desatualizado',
+      'list.map': 'Mapa',
+      'language.title': 'Idioma: {language}. Toque para trocar.',
+    },
+  };
 
   const $ = (id) => document.getElementById(id);
   const state = {
+    language: 'en',
     mapName: '',
     soloSource: null,
     map: null,
@@ -65,10 +359,114 @@
     flymasterSourceIndex: new Map(),
   };
 
+  let translateIntoLanguage = async () => {};
+
+  function normalizeLanguage(value) {
+    const lang = String(value || '').toLowerCase();
+    if (lang.startsWith('es')) return 'es';
+    if (lang === 'br' || lang.startsWith('pt')) return 'br';
+    return 'en';
+  }
+
+  function t(key, values = {}) {
+    const template = TEXT[state.language]?.[key] || TEXT.en[key] || key;
+    return template.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? '');
+  }
+
+  function htmlLang(language) {
+    return language === 'br' ? 'pt-BR' : language;
+  }
+
+  async function initLanguage() {
+    const preferred = (() => { try { return localStorage.getItem(LANGUAGE_KEY); } catch (_) { return ''; } })();
+    const initial = normalizeLanguage(preferred || navigator.language || document.documentElement.lang || 'en');
+    const [, , translateInto] = useL10n({ filesPath: '/l10n/', localStorageKeyName: LANGUAGE_KEY, fallbackLanguage: 'en' });
+    translateIntoLanguage = translateInto;
+    await setLanguage(initial, { rerender: false });
+  }
+
+  async function setLanguage(language, { rerender = true } = {}) {
+    const next = normalizeLanguage(language);
+    let applied = next;
+    try {
+      await translateIntoLanguage(next);
+    } catch (err) {
+      console.warn(`Language ${next} failed; falling back to English`, err);
+      if (next !== 'en') await translateIntoLanguage('en');
+      applied = 'en';
+    }
+    state.language = applied;
+    document.documentElement.lang = htmlLang(applied);
+    applyLanguageAttributes();
+    updateLanguageButtons();
+    if (rerender) refreshLanguageSensitiveUi();
+  }
+
+  function nextLanguage() {
+    const index = LANGUAGES.indexOf(state.language);
+    return LANGUAGES[(index + 1) % LANGUAGES.length];
+  }
+
+  function updateLanguageButtons() {
+    const label = LANGUAGE_LABELS[state.language] || 'EN';
+    for (const button of document.querySelectorAll('[data-language-toggle]')) {
+      button.textContent = label;
+      button.title = t('language.title', { language: LANGUAGE_NAMES[state.language] || label });
+      button.setAttribute('aria-label', button.title);
+    }
+  }
+
+  function applyLanguageAttributes() {
+    const attrs = {
+      'map-input': { placeholder: 'setup.input.placeholder' },
+      refresh: { title: 'header.refresh', 'aria-label': 'header.refresh' },
+      'track-menu-toggle': { title: 'header.options', 'aria-label': 'header.options' },
+      'racer-list-panel': { 'aria-label': 'list.panelLabel' },
+      'racer-list-close': { 'aria-label': 'list.close' },
+      'toggle-basemap': { title: 'actions.toggleMapType' },
+    };
+    for (const [id, config] of Object.entries(attrs)) {
+      const element = $(id);
+      if (!element) continue;
+      for (const [attr, key] of Object.entries(config)) element.setAttribute(attr, staticText(key));
+    }
+  }
+
+  function staticText(key) {
+    const fallback = {
+      'setup.input.placeholder': { en: 'Garmin or SPOT link / username', es: 'Enlace / usuario Garmin o SPOT', br: 'Link / usuário Garmin ou SPOT' },
+      'header.refresh': { en: 'Refresh Garmin data', es: 'Actualizar datos Garmin', br: 'Atualizar dados Garmin' },
+      'header.options': { en: 'Tracker options', es: 'Opciones del rastreador', br: 'Opções do rastreador' },
+      'list.panelLabel': { en: 'Racers list', es: 'Lista de corredores', br: 'Lista de atletas' },
+      'list.close': { en: 'Close racer list', es: 'Cerrar lista de corredores', br: 'Fechar lista de atletas' },
+      'actions.toggleMapType': { en: 'Toggle map type', es: 'Cambiar tipo de mapa', br: 'Mudar tipo de mapa' },
+    };
+    return fallback[key]?.[state.language] || fallback[key]?.en || key;
+  }
+
+  async function cycleLanguage() {
+    await setLanguage(nextLanguage());
+  }
+
+  function refreshLanguageSensitiveUi() {
+    updateHeader();
+    updateRaceSwitchMenu();
+    updateFitButton();
+    updateBaseMapButton();
+    updateKmlButton();
+    updateSourceFeaturesMenu();
+    updatePanel();
+    renderRacerList();
+  }
+
+  await initLanguage();
+
+  document.querySelectorAll('[data-language-toggle]').forEach((button) => button.addEventListener('click', cycleLanguage));
+
   $('setup-form').addEventListener('submit', (event) => {
     event.preventDefault();
     const source = parseSoloSource($('map-input').value);
-    if (!source) return showSetupError('Paste a Garmin MapShare username/link or a FindMeSPOT feed ID/link.');
+    if (!source) return showSetupError(t('setup.error.source'));
     if (source.type === 'garmin-mapshare') {
       saveMapName(source.name);
       location.assign(`/${encodeURIComponent(source.name)}`);
@@ -218,7 +616,7 @@
     updateRaceSwitchMenu();
     $('setup').classList.add('hidden');
     $('tracker').classList.remove('hidden');
-    updateHeader('Loading race…');
+    updateHeader(t('status.loadingRace'));
     if (!state.map) initMap();
     startOwnLocation();
     try {
@@ -236,7 +634,7 @@
       state.refreshTimer = setInterval(refreshAll, REFRESH_MS);
     } catch (err) {
       console.error(err);
-      setText('racer-status', 'race error');
+      setText('racer-status', t('status.raceError'));
       setText('info', err.message || String(err));
     }
   }
@@ -247,7 +645,7 @@
     updateRaceSwitchMenu();
     $('setup').classList.add('hidden');
     $('tracker').classList.remove('hidden');
-    updateHeader('Loading Flymaster…');
+    updateHeader(t('status.loadingFlymaster'));
     if (!state.map) initMap();
     startOwnLocation();
     const race = { id: `flymaster:${spec.groupId}`, name: spec.name || `Flymaster group ${spec.groupId}`, racers: [], sourceFeatureSource: null, flymasterGroupId: spec.groupId, flymasterDynamic: true };
@@ -273,7 +671,7 @@
       state.refreshTimer = setInterval(refreshAll, REFRESH_MS);
     } catch (err) {
       console.error(err);
-      setText('racer-status', 'Flymaster error');
+      setText('racer-status', t('status.flymasterError'));
       setText('info', err.message || String(err));
     }
   }
@@ -305,13 +703,13 @@
     state.connector = L.polyline([], { color: '#ffd43b', weight: 3, opacity: 0.9, dashArray: '8 8' }).addTo(state.layers);
     state.map.on('click', (event) => {
       if (state.measureStart) updateMeasurement(event.latlng.lat, event.latlng.lng);
-      else openLocationPopup(event.latlng.lat, event.latlng.lng, 'Selected location');
+      else openLocationPopup(event.latlng.lat, event.latlng.lng, t('popup.selectedLocation'));
     });
     loadImportedKml();
   }
 
   async function refreshRacer() {
-    setText('racer-status', 'refreshing…');
+    setText('racer-status', t('status.refreshing'));
     try {
       let racer = null;
       if (state.soloSource?.type === 'spot') {
@@ -329,7 +727,7 @@
       maybeInitialFit();
     } catch (err) {
       console.error(err);
-      setText('racer-status', 'feed error');
+      setText('racer-status', t('status.feedError'));
       setText('info', err.message || String(err));
     }
   }
@@ -337,7 +735,7 @@
   async function refreshRaceRacers() {
     if (state.race?.flymasterDynamic) return refreshFlymasterRace();
     if (!state.racers.length) return;
-    setText('racer-status', 'refreshing…');
+    setText('racer-status', t('status.refreshing'));
     const tasks = state.race?.flymasterGroupId ? [connectFlymasterGroup(state.race.flymasterGroupId).catch((err) => console.warn('Flymaster connection failed', err))] : [];
     tasks.push(...state.racers.map(refreshRaceRacer));
     await Promise.allSettled(tasks);
@@ -727,7 +1125,7 @@
   async function refreshFlymasterRace() {
     const groupId = state.race?.flymasterGroupId;
     if (!groupId) return;
-    setText('racer-status', state.flymaster?.connected ? 'Flymaster live' : 'connecting…');
+    setText('racer-status', state.flymaster?.connected ? t('status.flymasterLive') : t('status.connecting'));
     try {
       await connectFlymasterGroup(groupId);
     } catch (err) {
@@ -1293,7 +1691,7 @@
     });
     if (!state.racerMarker) state.racerMarker = L.marker(ll, { icon, zIndexOffset: 4000, title: r.name, bubblingMouseEvents: false }).addTo(state.layers);
     else { state.racerMarker.setLatLng(ll); state.racerMarker.setIcon(icon); }
-    state.racerMarker.bindPopup(locationPopupHtml(r.name, r.lat, r.lon, `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Course: ${escapeHtml(r.courseText)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}`));
+    state.racerMarker.bindPopup(locationPopupHtml(r.name, r.lat, r.lon, `${t('popup.speed')}: ${escapeHtml(r.speedText)}<br>${t('popup.elev')}: ${formatElevation(r.ele)}<br>${t('popup.course')}: ${escapeHtml(r.courseText)}<br>${t('popup.updated')}: ${escapeHtml(formatUpdatedTime(r))}`));
     if (r.history) state.racerTrail.setLatLngs(r.history.map((p) => [p.lat, p.lon]));
     updateSourceFeaturesMenu();
     updateConnector();
@@ -1301,7 +1699,7 @@
 
   function startOwnLocation() {
     if (state.geoWatch != null) return;
-    if (!navigator.geolocation) return setText('range', 'no GPS');
+    if (!navigator.geolocation) return setText('range', t('status.noGps'));
     state.geoWatch = navigator.geolocation.watchPosition(onMePosition, onMeError, { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 });
   }
 
@@ -1326,9 +1724,9 @@
   }
 
   function onMeError(err) {
-    setText('range', 'GPS denied');
+    setText('range', t('status.gpsDenied'));
     const msg = err && err.message ? err.message : String(err || 'GPS error');
-    setText('info', `${state.racer ? infoText(state.racer) + ' · ' : ''}Phone GPS: ${msg}`);
+    setText('info', `${state.racer ? infoText(state.racer) + ' · ' : ''}${t('info.phoneGps', { value: msg })}`);
   }
 
   function updateMeLayer() {
@@ -1338,11 +1736,11 @@
       className: 'me-icon-wrap', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -18],
       html: `<div class="me-icon"><div class="me-arrow" style="transform:rotate(${Number.isFinite(m.heading) ? m.heading : 0}deg);opacity:${Number.isFinite(m.heading) ? 1 : 0.25}"></div></div>`,
     });
-    if (!state.meMarker) state.meMarker = L.marker(ll, { icon, zIndexOffset: 5000, title: 'Me', bubblingMouseEvents: false }).addTo(state.layers);
+    if (!state.meMarker) state.meMarker = L.marker(ll, { icon, zIndexOffset: 5000, title: t('popup.me'), bubblingMouseEvents: false }).addTo(state.layers);
     else { state.meMarker.setLatLng(ll); state.meMarker.setIcon(icon); }
     const speed = m.speed == null ? '—' : `${(m.speed * 3.6).toFixed(1)} km/h`;
     const acc = m.accuracy == null ? '—' : `±${Math.round(m.accuracy)} m`;
-    state.meMarker.bindPopup(locationPopupHtml('Me', m.lat, m.lon, `Accuracy: ${acc}<br>Speed: ${speed}`));
+    state.meMarker.bindPopup(locationPopupHtml(t('popup.me'), m.lat, m.lon, `${t('popup.accuracy')}: ${acc}<br>${t('popup.speed')}: ${speed}`));
     if (!state.accuracyCircle) state.accuracyCircle = L.circle(ll, accuracyStyle(m.accuracy)).addTo(state.layers);
     else { state.accuracyCircle.setLatLng(ll); state.accuracyCircle.setRadius(m.accuracy || 0); }
   }
@@ -1371,14 +1769,14 @@
     const r = state.racer;
     if (!r) return;
     const stale = staleMinutes(r);
-    setText('racer-status', r.gpsFix === 'False' ? 'no GPS fix' : isPositionStale(r) ? `stale ${Math.round(stale)} min` : 'live');
+    setText('racer-status', r.gpsFix === 'False' ? t('status.noGpsFix') : isPositionStale(r) ? t('status.staleMinutes', { minutes: Math.round(stale) }) : t('status.live'));
     setText('speed', r.speedText || '—');
     setText('elevation', formatElevation(r.ele));
     if (state.me) {
       const d = distanceM(state.me.lat, state.me.lon, r.lat, r.lon);
       const b = bearingDeg(state.me.lat, state.me.lon, r.lat, r.lon);
       setText('range', `${formatDistance(d)} · ${Math.round(b)}°`);
-    } else setText('range', 'waiting GPS');
+    } else setText('range', t('status.waitingGps'));
     setText('info', infoText(r));
   }
 
@@ -1393,7 +1791,7 @@
     state.measureStart = { lat, lon, title };
     state.measurePopup = L.popup({ closeOnClick: false, autoClose: false })
       .setLatLng([lat, lon])
-      .setContent(`<b>Measuring from</b><br>${escapeHtml(title)}<br>${lat.toFixed(6)}, ${lon.toFixed(6)}<br><span class="measure-hint">Tap the map to update the endpoint.<br>Close this popup to stop.</span>`);
+      .setContent(`<b>${t('measure.from')}</b><br>${escapeHtml(title)}<br>${lat.toFixed(6)}, ${lon.toFixed(6)}<br><span class="measure-hint">${t('measure.hint')}</span>`);
     const popup = state.measurePopup;
     popup.on('remove', () => {
       if (state.measurePopup === popup) {
@@ -1402,7 +1800,7 @@
       }
     });
     popup.addTo(state.map);
-    setText('info', 'Measuring: tap the map to choose or update the second point.');
+    setText('info', t('measure.info'));
   }
 
   function updateMeasurement(lat, lon) {
@@ -1422,7 +1820,7 @@
         html: `<div class="measure-label">${label}</div>`,
       }),
     }).addTo(state.measureLayer);
-    setText('info', `Measured distance: ${label}`);
+    setText('info', t('measure.distance', { distance: label }));
   }
 
   function clearMeasurement() {
@@ -1442,7 +1840,7 @@
   }
 
   function mapLinksHtml(lat, lon, title) {
-    return `<div class="map-popup-actions"><a href="${googlePointUrl(lat, lon)}" target="_blank" rel="noopener">Google Maps</a><a href="${osmPointUrl(lat, lon)}" target="_blank" rel="noopener">OSM</a><button type="button" data-measure-lat="${lat}" data-measure-lon="${lon}" data-measure-title="${escapeHtml(title)}">Measure from here</button></div>`;
+    return `<div class="map-popup-actions"><a href="${googlePointUrl(lat, lon)}" target="_blank" rel="noopener">Google Maps</a><a href="${osmPointUrl(lat, lon)}" target="_blank" rel="noopener">OSM</a><button type="button" data-measure-lat="${lat}" data-measure-lon="${lon}" data-measure-title="${escapeHtml(title)}">${t('popup.measureFromHere')}</button></div>`;
   }
 
   function googlePointUrl(lat, lon) { return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`; }
@@ -1453,11 +1851,12 @@
     event.target.value = '';
     if (!file) return;
     try {
-      await importKmlText(await file.text(), file.name || 'Imported KML', true);
+      await importKmlText(await file.text(), file.name || t('kml.imported'), true);
     } catch (err) {
       console.error(err);
-      setText('info', `KML import failed: ${err.message || err}`);
-      alert(`KML import failed: ${err.message || err}`);
+      const message = t('kml.importFailed', { error: err.message || err });
+      setText('info', message);
+      alert(message);
     }
   }
 
@@ -1465,7 +1864,7 @@
     try {
       const res = await fetch('/share-target-data', { cache: 'no-store' });
       const data = res.ok ? await res.json() : null;
-      if (data?.kmlText) await importKmlText(data.kmlText, data.kmlName || 'Shared KML', false);
+      if (data?.kmlText) await importKmlText(data.kmlText, data.kmlName || t('kml.shared'), false);
       const sharedMap = parseSharedMapCandidates([data?.url, data?.text, data?.title].filter(Boolean));
       if (sharedMap) {
         saveMapName(sharedMap);
@@ -1480,20 +1879,20 @@
   }
 
   async function importKmlText(text, name, fitAfterRender) {
-    const imported = parseImportedKml(text, name || 'Imported KML');
-    if (!imported.points.length && !imported.lines.length) throw new Error('No points or lines found in KML.');
+    const imported = parseImportedKml(text, name || t('kml.imported'));
+    if (!imported.points.length && !imported.lines.length) throw new Error(t('kml.noFeatures'));
     state.importedKml = imported;
     state.kmlVisible = true;
     saveImportedKml(text);
     renderImportedKml(fitAfterRender && !!state.map);
-    setText('info', `Imported KML: ${imported.points.length} points, ${imported.lines.length} lines.`);
+    setText('info', t('kml.importInfo', { points: imported.points.length, lines: imported.lines.length }));
   }
 
   function loadImportedKml() {
     const text = loadSavedKml();
     if (!text) return updateKmlButton();
     try {
-      const imported = parseImportedKml(text, 'Imported KML');
+      const imported = parseImportedKml(text, t('kml.imported'));
       if (!imported.points.length && !imported.lines.length) return updateKmlButton();
       state.importedKml = imported;
       renderImportedKml(false);
@@ -1505,10 +1904,10 @@
 
   function parseImportedKml(xmlText, fallbackName) {
     const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-    if (doc.querySelector('parsererror')) throw new Error('KML XML parse error.');
-    const out = { name: textOf(doc, 'name') || fallbackName || 'Imported KML', points: [], lines: [] };
+    if (doc.querySelector('parsererror')) throw new Error(t('kml.parseError'));
+    const out = { name: textOf(doc, 'name') || fallbackName || t('kml.imported'), points: [], lines: [] };
     for (const pm of Array.from(doc.getElementsByTagNameNS('*', 'Placemark'))) {
-      const name = textOf(pm, 'name') || 'KML feature';
+      const name = textOf(pm, 'name') || t('kml.feature');
       for (const point of Array.from(pm.getElementsByTagNameNS('*', 'Point'))) {
         const coords = parseKmlCoordinates(textOf(point, 'coordinates'));
         if (coords[0]) out.points.push({ name, lat: coords[0][0], lon: coords[0][1] });
@@ -1571,8 +1970,8 @@
     }
     button.classList.remove('hidden');
     button.disabled = false;
-    button.textContent = state.kmlVisible ? 'Hide KML' : 'Show KML';
-    button.title = `${state.importedKml.points.length} points, ${state.importedKml.lines.length} lines`;
+    button.textContent = state.kmlVisible ? t('kml.hide') : t('kml.show');
+    button.title = t('kml.counts', { points: state.importedKml.points.length, lines: state.importedKml.lines.length });
   }
 
   function toggleSourceFeatures() {
@@ -1596,9 +1995,11 @@
     const r = state.mapFeatures.routes.length;
     state.sourceFeaturesDetected = hasHistory || w > 0 || r > 0;
     button.classList.toggle('hidden', !state.sourceFeaturesDetected);
-    const label = state.raceMode ? 'race task' : 'Garmin features';
-    button.textContent = state.sourceFeaturesVisible ? `Hide ${label}` : `Show ${label}`;
-    button.title = state.raceMode ? `${w} turnpoints, ${r} route${state.flymasterTaskId ? ` · Flymaster task ${state.flymasterTaskId}` : ''}` : `${w} waypoints, ${r} routes${hasHistory ? ', history track' : ''}`;
+    const label = state.raceMode ? t('features.raceTask') : t('features.garmin');
+    button.textContent = state.sourceFeaturesVisible ? t('features.hide', { label }) : t('features.show', { label });
+    button.title = state.raceMode
+      ? t('features.raceTitle', { turnpoints: w, routes: r, task: state.flymasterTaskId ? t('features.flymasterTask', { taskId: state.flymasterTaskId }) : '' })
+      : t('features.soloTitle', { waypoints: w, routes: r, history: hasHistory ? t('features.historyTrack') : '' });
   }
 
   function switchRaceMode() {
@@ -1628,8 +2029,8 @@
 
   function updateRaceSwitchMenu() {
     const button = $('switch-race');
-    button.textContent = state.raceMode ? 'Leave race mode' : 'Enter race';
-    button.title = state.raceMode ? 'Return to the launcher' : 'Enter Transcapixaba 2026 race mode';
+    button.textContent = state.raceMode ? t('menu.leaveRace') : t('menu.enterRace');
+    button.title = state.raceMode ? t('menu.leaveRaceTitle') : t('menu.enterRaceTitle');
     $('change-map').classList.toggle('hidden', state.raceMode);
   }
 
@@ -1661,10 +2062,10 @@
 
   function updateBaseMapButton() {
     const button = $('toggle-basemap');
-    const current = state.baseMapType === 'topo' ? 'Topo' : 'Street';
-    const next = state.baseMapType === 'topo' ? 'Street' : 'Topo';
-    button.textContent = `🗺️ ${next}`;
-    button.title = `Map: ${current}. Switch to ${next}.`;
+    const current = state.baseMapType === 'topo' ? t('basemap.topo') : t('basemap.street');
+    const next = state.baseMapType === 'topo' ? t('basemap.street') : t('basemap.topo');
+    button.textContent = t('basemap.button', { next });
+    button.title = t('basemap.title', { current, next });
   }
 
   function updateRacePanel() {
@@ -1672,23 +2073,23 @@
     const stale = positions.filter(isPositionStale).length;
     const conflicts = state.racers.filter((racer) => racer.sourceConflict).length;
     const selected = selectedRacePositions();
-    const statusParts = [`${positions.length}/${state.racers.length} live`];
-    if (stale) statusParts.push(`${stale} stale`);
-    if (conflicts) statusParts.push(`${conflicts} conflict`);
+    const statusParts = [t('status.liveCount', { live: positions.length, total: state.racers.length })];
+    if (stale) statusParts.push(t('status.staleCount', { count: stale }));
+    if (conflicts) statusParts.push(t('status.conflictCount', { count: conflicts }));
     setText('racer-status', statusParts.join(' · '));
-    setText('speed', state.selectedRacerIds.size ? `${selected.length} selected` : 'all');
-    setText('elevation', stale ? `${stale} stale` : '—');
+    setText('speed', state.selectedRacerIds.size ? t('status.selected', { count: selected.length }) : t('status.all'));
+    setText('elevation', stale ? t('status.staleCount', { count: stale }) : '—');
     const target = connectorRaceTarget();
     if (state.me && target) {
       const d = distanceM(state.me.lat, state.me.lon, target.lat, target.lon);
       const b = bearingDeg(state.me.lat, state.me.lon, target.lat, target.lon);
       setText('range', `${formatDistance(d)} · ${Math.round(b)}°`);
-    } else setText('range', state.me ? 'no racers' : 'waiting GPS');
+    } else setText('range', state.me ? t('status.noRacers') : t('status.waitingGps'));
     const updated = state.lastRaceUpdateAt ? formatAge(Date.now() - state.lastRaceUpdateAt) : '—';
     const extras = [];
-    if (stale) extras.push(`${stale} stale`);
-    if (conflicts) extras.push(`${conflicts} conflict`);
-    setText('info', `${state.racers.length} racers · ${supportedSourceSummary()} sources · updated ${updated}${extras.length ? ` · ${extras.join(' · ')}` : ''}`);
+    if (stale) extras.push(t('status.staleCount', { count: stale }));
+    if (conflicts) extras.push(t('status.conflictCount', { count: conflicts }));
+    setText('info', t('info.raceSummary', { racers: state.racers.length, sources: supportedSourceSummary(), updated, extras: extras.length ? ` · ${extras.join(' · ')}` : '' }));
     updateFitButton();
   }
 
@@ -1813,9 +2214,9 @@
     if (!state.raceMode || !$('racer-list-body')) return;
     const followed = state.selectedRacerIds.size;
     const live = racePositions().length;
-    setText('racer-list-summary', `${followed} followed · ${live}/${state.racers.length} live`);
+    setText('racer-list-summary', t('list.summary', { followed, live, total: state.racers.length }));
     const sortButton = $('racer-list-sort');
-    if (sortButton) sortButton.textContent = state.racerListSort === 'proximity' ? 'Sort: proximity' : 'Sort: A→Z';
+    if (sortButton) sortButton.textContent = state.racerListSort === 'proximity' ? t('list.sortProximity') : t('list.sortAz');
     const sorted = state.racers.slice().sort(compareRacersForList);
     $('racer-list-body').innerHTML = sorted.map(racerListRowHtml).join('');
   }
@@ -1842,24 +2243,24 @@
     const followed = state.selectedRacerIds.has(racer.id);
     const stale = r ? isPositionStale(r) : false;
     const conflict = !!racer.sourceConflict;
-    const status = conflict ? `⚠ ${racer.sourceConflict.message}` : r ? `${r.sourceLabel || sourceTypeLabel(r.sourceType)} · ${formatUpdatedTime(r)}${stale ? ' · stale' : ''}` : (racer.error || 'no position yet');
+    const status = conflict ? `⚠ ${racer.sourceConflict.message}` : r ? `${r.sourceLabel || sourceTypeLabel(r.sourceType)} · ${formatUpdatedTime(r)}${stale ? ` · ${t('list.stale')}` : ''}` : (racer.error || t('list.noPosition'));
     const distance = state.me && r ? ` · ${formatDistance(distanceM(state.me.lat, state.me.lon, r.lat, r.lon))}` : '';
-    return `<div class="racer-list-row ${followed ? 'followed' : ''} ${stale ? 'stale' : ''} ${conflict ? 'conflict' : ''}"><label><input type="checkbox" data-racer-follow="${escapeHtml(racer.id)}" ${followed ? 'checked' : ''}><span class="racer-list-dot" style="background:${racerColor(racer.id)}"></span><span class="racer-list-main"><b>${escapeHtml(racer.name)}</b><small>${escapeHtml(status)}${escapeHtml(distance)}</small></span></label><button type="button" data-racer-locate="${escapeHtml(racer.id)}" ${r ? '' : 'disabled'}>Map</button></div>`;
+    return `<div class="racer-list-row ${followed ? 'followed' : ''} ${stale ? 'stale' : ''} ${conflict ? 'conflict' : ''}"><label><input type="checkbox" data-racer-follow="${escapeHtml(racer.id)}" ${followed ? 'checked' : ''}><span class="racer-list-dot" style="background:${racerColor(racer.id)}"></span><span class="racer-list-main"><b>${escapeHtml(racer.name)}</b><small>${escapeHtml(status)}${escapeHtml(distance)}</small></span></label><button type="button" data-racer-locate="${escapeHtml(racer.id)}" ${r ? '' : 'disabled'}>${t('list.map')}</button></div>`;
   }
 
   function updateFitButton() {
     if (state.raceMode) {
       const followed = state.selectedRacerIds.size > 0;
-      $('fit-both').textContent = followed ? 'Fit followed' : 'Fit race';
-      $('fit-both').title = followed ? 'Fit followed racers and your location' : 'Fit all racers and your location';
-      $('center-racer').textContent = followed ? 'Followed racers' : 'All racers';
-      $('center-racer').title = followed ? 'Fit followed racers only' : 'Fit all racers only';
+      $('fit-both').textContent = followed ? t('fit.fitFollowed') : t('fit.fitRace');
+      $('fit-both').title = followed ? t('fit.fitFollowedTitle') : t('fit.fitRaceTitle');
+      $('center-racer').textContent = followed ? t('fit.followedRacers') : t('fit.allRacers');
+      $('center-racer').title = followed ? t('fit.followedOnlyTitle') : t('fit.allOnlyTitle');
       return;
     }
-    $('fit-both').textContent = 'Fit both';
-    $('fit-both').title = 'Fit racer and your location';
-    $('center-racer').textContent = 'Racer';
-    $('center-racer').title = 'Center racer';
+    $('fit-both').textContent = t('fit.fitBoth');
+    $('fit-both').title = t('fit.fitBothTitle');
+    $('center-racer').textContent = t('fit.racer');
+    $('center-racer').title = t('fit.centerRacerTitle');
   }
 
   function supportedSourceSummary() {
@@ -2254,7 +2655,7 @@
   function dedupeLatLon(points) { const out = []; let prev = null; for (const p of points) { if (!prev || Math.abs(prev.lat - p.lat) > 1e-7 || Math.abs(prev.lon - p.lon) > 1e-7) out.push(p); prev = p; } return out; }
   function dedupePositionHistory(points) { const out = []; const seen = new Set(); for (const p of dedupeLatLon(points)) { const key = `${Number(p.lat).toFixed(7)},${Number(p.lon).toFixed(7)}`; if (seen.has(key)) continue; seen.add(key); out.push(p); } return out; }
   function parseGarminUtc(s) { if (!s) return 0; const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)$/i); if (!m) return Date.parse(`${s} UTC`) || Date.parse(s) || 0; let [, mo, da, yr, hr, mi, se, ap] = m; let h = Number(hr) % 12; if (ap.toUpperCase() === 'PM') h += 12; return Date.UTC(Number(yr), Number(mo) - 1, Number(da), h, Number(mi), Number(se)); }
-  function infoText(r) { const parts = [`Updated: ${formatUpdatedTime(r)}`]; if (r.ele != null) parts.push(`Elev: ${Math.round(r.ele)} m`); if (r.gpsFix) parts.push(`GPS fix: ${r.gpsFix}`); if (r.emergency === 'True') parts.push('EMERGENCY'); if (r.text) parts.push(`Text: ${r.text}`); return parts.join(' · '); }
+  function infoText(r) { const parts = [t('info.updated', { value: formatUpdatedTime(r) })]; if (r.ele != null) parts.push(t('info.elev', { value: Math.round(r.ele) })); if (r.gpsFix) parts.push(t('info.gpsFix', { value: r.gpsFix })); if (r.emergency === 'True') parts.push(t('info.emergency')); if (r.text) parts.push(t('info.text', { value: r.text })); return parts.join(' · '); }
   function formatUpdatedTime(r) {
     if (!r?.utcMs) return r?.time || r?.timeUtc || '—';
     const local = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(r.utcMs));
@@ -2263,15 +2664,15 @@
   }
   function formatAge(ageMs) {
     if (!Number.isFinite(ageMs)) return '';
-    if (ageMs < -60000) return 'future';
+    if (ageMs < -60000) return t('age.future');
     const seconds = Math.max(0, Math.round(ageMs / 1000));
-    if (seconds < 45) return 'just now';
+    if (seconds < 45) return t('age.justNow');
     const minutes = Math.round(seconds / 60);
-    if (minutes < 90) return `${minutes} min ago`;
+    if (minutes < 90) return t('age.minutesAgo', { count: minutes });
     const hours = Math.round(minutes / 60);
-    if (hours < 48) return `${hours} h ago`;
+    if (hours < 48) return t('age.hoursAgo', { count: hours });
     const days = Math.round(hours / 24);
-    return `${days} d ago`;
+    return t('age.daysAgo', { count: days });
   }
   function staleMinutes(r) { return r?.utcMs ? (Date.now() - r.utcMs) / 60000 : null; }
   function isPositionStale(position) { const age = staleMinutes(position); return age != null && age > sourceStaleThresholdMin(position?.sourceType); }
@@ -2289,7 +2690,7 @@
       for (const handle of launchParams.files || []) {
         try {
           const file = await handle.getFile();
-          if (/\.kml$/i.test(file.name) || /kml|xml/i.test(file.type)) await importKmlText(await file.text(), file.name || 'Opened KML', true);
+          if (/\.kml$/i.test(file.name) || /kml|xml/i.test(file.type)) await importKmlText(await file.text(), file.name || t('kml.opened'), true);
         } catch (err) {
           console.warn('File launch failed', err);
         }

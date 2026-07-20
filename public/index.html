@@ -19,15 +19,16 @@
     <section class="setup-card">
       <div class="page-title-row">
         <h1>MapShare Companion</h1>
-        <a class="donate-link" href="https://ko-fi.com/mapsharecompanion" target="_blank" rel="noopener">Donate</a>
+        <a class="donate-link" href="https://ko-fi.com/mapsharecompanion" target="_blank" rel="noopener" data-l10n-key="donate">Donate</a>
+        <button class="language-button" type="button" data-language-toggle>EN</button>
       </div>
-      <p>A support-crew map for races and solo tracking.</p>
-      <button id="enter-race" class="setup-primary" type="button">Enter Transcapixaba 2026 Race</button>
+      <p data-l10n-key="setup.tagline">A support-crew map for races and solo tracking.</p>
+      <button id="enter-race" class="setup-primary" type="button" data-l10n-key="setup.enterRace">Enter Transcapixaba 2026 Race</button>
       <form id="setup-form">
         <input id="map-input" autocomplete="off" inputmode="url" placeholder="Garmin or SPOT link / username" />
-        <button type="submit">Track solo</button>
+        <button type="submit" data-l10n-key="setup.trackSolo">Track solo</button>
       </form>
-      <p class="hint">Examples: <code>share.garmin.com/nhayes</code>, <code>nhayes</code>, or a FindMeSPOT feed ID/link.</p>
+      <p class="hint" data-l10n-key="setup.examples">Examples: share.garmin.com/nhayes, nhayes, or a FindMeSPOT feed ID/link.</p>
       <p id="setup-error" class="setup-error" role="alert"></p>
     </section>
   </main>
@@ -37,51 +38,52 @@
       <div>
         <div class="page-title-row compact">
           <div id="app-title" class="title">MapShare Companion</div>
-          <a class="donate-link" href="https://ko-fi.com/mapsharecompanion" target="_blank" rel="noopener">Donate</a>
+          <a class="donate-link" href="https://ko-fi.com/mapsharecompanion" target="_blank" rel="noopener" data-l10n-key="donate">Donate</a>
         </div>
         <div id="app-subtitle" class="subtitle"><b id="map-name">—</b></div>
       </div>
       <div class="header-actions">
         <button id="refresh" class="icon-button" type="button" title="Refresh Garmin data" aria-label="Refresh Garmin data">⟳</button>
+        <button class="language-button compact" type="button" data-language-toggle>EN</button>
         <div class="menu-wrap">
           <button id="track-menu-toggle" class="icon-button" type="button" title="Tracker options" aria-label="Tracker options" aria-haspopup="menu" aria-expanded="false">⋮</button>
           <div id="track-menu" class="track-menu hidden" role="menu" aria-label="Tracker options">
             <button id="switch-race" type="button" role="menuitem">Enter race</button>
-            <button id="import-kml" type="button" role="menuitem">Import KML</button>
+            <button id="import-kml" type="button" role="menuitem" data-l10n-key="menu.importKml">Import KML</button>
             <button id="toggle-source-features" class="hidden" type="button" role="menuitem">Hide Garmin features</button>
-            <button id="change-map" type="button" role="menuitem">Change racer</button>
+            <button id="change-map" type="button" role="menuitem" data-l10n-key="menu.changeRacer">Change racer</button>
           </div>
         </div>
       </div>
     </header>
 
     <section class="stats">
-      <div><span>Racer</span><b id="racer-status">loading…</b></div>
-      <div><span>Speed</span><b id="speed">—</b></div>
-      <div><span>Elev</span><b id="elevation">—</b></div>
-      <div><span>Me → Racer</span><b id="range">GPS…</b></div>
+      <div><span data-l10n-key="stats.racer">Racer</span><b id="racer-status" data-l10n-key="stats.loading">loading…</b></div>
+      <div><span data-l10n-key="stats.speed">Speed</span><b id="speed">—</b></div>
+      <div><span data-l10n-key="stats.elev">Elev</span><b id="elevation">—</b></div>
+      <div><span data-l10n-key="stats.range">Me → Racer</span><b id="range">GPS…</b></div>
     </section>
 
     <nav class="actions">
-      <button id="fit-both" type="button">Fit both</button>
-      <button id="center-racer" type="button">Racer</button>
-      <button id="center-me" type="button">Me</button>
-      <button id="racer-list" class="hidden" type="button">List</button>
+      <button id="fit-both" type="button" data-l10n-key="actions.fitBoth">Fit both</button>
+      <button id="center-racer" type="button" data-l10n-key="actions.racer">Racer</button>
+      <button id="center-me" type="button" data-l10n-key="actions.me">Me</button>
+      <button id="racer-list" class="hidden" type="button" data-l10n-key="actions.list">List</button>
       <button id="toggle-basemap" type="button" title="Toggle map type">🗺️ Topo</button>
       <button id="toggle-kml" class="hidden" type="button">Hide KML</button>
       <input id="kml-file" class="hidden" type="file" accept=".kml,application/vnd.google-earth.kml+xml,application/xml,text/xml" />
     </nav>
 
-    <div id="info" class="info">Loading…</div>
+    <div id="info" class="info" data-l10n-key="stats.loadingCapital">Loading…</div>
     <div id="map"></div>
     <aside id="racer-list-panel" class="racer-list-panel hidden" aria-label="Racers list">
       <div class="racer-list-head">
-        <div><b>Racers</b><span id="racer-list-summary">—</span></div>
+        <div><b data-l10n-key="list.racers">Racers</b><span id="racer-list-summary">—</span></div>
         <button id="racer-list-close" type="button" aria-label="Close racer list">×</button>
       </div>
       <div class="racer-list-actions">
-        <button id="racer-list-follow-all" type="button">Follow all</button>
-        <button id="racer-list-clear" type="button">Clear followed</button>
+        <button id="racer-list-follow-all" type="button" data-l10n-key="list.followAll">Follow all</button>
+        <button id="racer-list-clear" type="button" data-l10n-key="list.clearFollowed">Clear followed</button>
         <button id="racer-list-sort" type="button">Sort: proximity</button>
       </div>
       <div id="racer-list-body" class="racer-list-body"></div>
@@ -90,6 +92,6 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://lt.flymaster.net/msgpack.min.js"></script>
-  <script src="/app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

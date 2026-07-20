@@ -1,10 +1,14 @@
-const CACHE_NAME = 'mapshare-companion-v3';
+const CACHE_NAME = 'mapshare-companion-v4';
 const SHARE_DATA_URL = '/share-target-data';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/styles.css',
   '/app.js',
+  '/vendor/use-l10n.js',
+  '/l10n/en.json',
+  '/l10n/es.json',
+  '/l10n/br.json',
   '/manifest.webmanifest',
   '/icon.svg',
   '/icons/icon-192.png',

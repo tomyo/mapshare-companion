@@ -1,0 +1,22 @@
+{
+  "donate": "Doar",
+  "setup.tagline": "Um mapa para equipes de apoio em provas e rastreamento solo.",
+  "setup.enterRace": "Entrar na prova Transcapixaba 2026",
+  "setup.trackSolo": "Rastrear solo",
+  "setup.examples": "Exemplos: share.garmin.com/nhayes, nhayes, ou um ID/link de feed FindMeSPOT.",
+  "menu.importKml": "Importar KML",
+  "menu.changeRacer": "Trocar atleta",
+  "stats.racer": "Atleta",
+  "stats.loading": "carregando…",
+  "stats.speed": "Velocidade",
+  "stats.elev": "Alt.",
+  "stats.range": "Eu → Atleta",
+  "stats.loadingCapital": "Carregando…",
+  "actions.fitBoth": "Ajustar ambos",
+  "actions.racer": "Atleta",
+  "actions.me": "Eu",
+  "actions.list": "Lista",
+  "list.racers": "Atletas",
+  "list.followAll": "Seguir todos",
+  "list.clearFollowed": "Limpar seguidos"
+}

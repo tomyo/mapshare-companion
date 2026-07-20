@@ -1,0 +1,22 @@
+{
+  "donate": "Donar",
+  "setup.tagline": "Un mapa para equipos de apoyo en carreras y seguimiento individual.",
+  "setup.enterRace": "Entrar a la carrera Transcapixaba 2026",
+  "setup.trackSolo": "Seguir individual",
+  "setup.examples": "Ejemplos: share.garmin.com/nhayes, nhayes, o un ID/enlace de feed FindMeSPOT.",
+  "menu.importKml": "Importar KML",
+  "menu.changeRacer": "Cambiar corredor",
+  "stats.racer": "Corredor",
+  "stats.loading": "cargando…",
+  "stats.speed": "Velocidad",
+  "stats.elev": "Alt.",
+  "stats.range": "Yo → Corredor",
+  "stats.loadingCapital": "Cargando…",
+  "actions.fitBoth": "Ajustar ambos",
+  "actions.racer": "Corredor",
+  "actions.me": "Yo",
+  "actions.list": "Lista",
+  "list.racers": "Corredores",
+  "list.followAll": "Seguir todos",
+  "list.clearFollowed": "Limpiar seguidos"
+}

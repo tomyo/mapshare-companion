@@ -1,0 +1,22 @@
+{
+  "donate": "Donate",
+  "setup.tagline": "A support-crew map for races and solo tracking.",
+  "setup.enterRace": "Enter Transcapixaba 2026 Race",
+  "setup.trackSolo": "Track solo",
+  "setup.examples": "Examples: share.garmin.com/nhayes, nhayes, or a FindMeSPOT feed ID/link.",
+  "menu.importKml": "Import KML",
+  "menu.changeRacer": "Change racer",
+  "stats.racer": "Racer",
+  "stats.loading": "loading…",
+  "stats.speed": "Speed",
+  "stats.elev": "Elev",
+  "stats.range": "Me → Racer",
+  "stats.loadingCapital": "Loading…",
+  "actions.fitBoth": "Fit both",
+  "actions.racer": "Racer",
+  "actions.me": "Me",
+  "actions.list": "List",
+  "list.racers": "Racers",
+  "list.followAll": "Follow all",
+  "list.clearFollowed": "Clear followed"
+}
