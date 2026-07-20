@@ -50,6 +50,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       'status.liveCount': '{live}/{total} live',
       'status.staleCount': '{count} stale',
       'status.conflictCount': '{count} conflict',
+      'status.flying': 'Flying',
       'info.updated': 'Updated: {value}',
       'info.elev': 'Elev: {value} m',
       'info.gpsFix': 'GPS fix: {value}',
@@ -70,6 +71,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.updated': 'Updated',
       'popup.source': 'Source',
       'popup.accuracy': 'Accuracy',
+      'popup.agl': 'AGL',
       'popup.measureFromHere': 'Measure from here',
       'measure.from': 'Measuring from',
       'measure.hint': 'Tap the map or a racer to update the endpoint.<br>Close this popup to stop.',
@@ -149,6 +151,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       'status.liveCount': '{live}/{total} en vivo',
       'status.staleCount': '{count} desactualizados',
       'status.conflictCount': '{count} conflictos',
+      'status.flying': 'Volando',
       'info.updated': 'Actualizado: {value}',
       'info.elev': 'Alt.: {value} m',
       'info.gpsFix': 'Señal GPS: {value}',
@@ -169,6 +172,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.updated': 'Actualizado',
       'popup.source': 'Fuente',
       'popup.accuracy': 'Precisión',
+      'popup.agl': 'AGL',
       'popup.measureFromHere': 'Medir desde aquí',
       'measure.from': 'Midiendo desde',
       'measure.hint': 'Toca el mapa o un corredor para actualizar el punto final.<br>Cierra este popup para terminar.',
@@ -248,6 +252,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       'status.liveCount': '{live}/{total} ao vivo',
       'status.staleCount': '{count} desatualizados',
       'status.conflictCount': '{count} conflitos',
+      'status.flying': 'Voando',
       'info.updated': 'Atualizado: {value}',
       'info.elev': 'Alt.: {value} m',
       'info.gpsFix': 'Sinal GPS: {value}',
@@ -268,6 +273,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.updated': 'Atualizado',
       'popup.source': 'Fonte',
       'popup.accuracy': 'Precisão',
+      'popup.agl': 'AGL',
       'popup.measureFromHere': 'Medir daqui',
       'measure.from': 'Medindo a partir de',
       'measure.hint': 'Toque no mapa ou em um atleta para atualizar o ponto final.<br>Feche este popup para parar.',
@@ -922,14 +928,16 @@ import { useL10n } from '/vendor/use-l10n.js';
       const selected = state.selectedRacerIds.has(racer.id);
       const stale = isPositionStale(r);
       const conflict = !!racer.sourceConflict;
+      const flying = isPositionFlying(r);
       const color = racerColor(racer.id);
       const badge = conflict ? '⚠' : stale ? '!' : '';
       const badgeTitle = conflict ? 'Source conflict' : stale ? 'Stale position' : '';
       const badgeHtml = badge ? `<div class="racer-status-badge" title="${badgeTitle}" style="position:absolute;right:-5px;top:-7px;width:17px;height:17px;border-radius:50%;background:${conflict ? '#f97316' : '#64748b'};color:#fff;border:2px solid #fff;font:900 11px/13px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">${badge}</div>` : '';
+      const flyingBadgeHtml = flying ? `<div class="racer-flying-badge" title="${t('status.flying')}" style="position:absolute;left:-7px;top:-9px;width:21px;height:21px;border-radius:50%;background:#0284c7;color:#fff;border:2px solid #fff;font:900 12px/17px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">🪂</div>` : '';
       const iconOpacity = stale ? 0.55 : 1;
       const icon = L.divIcon({
         className: 'racer-icon-wrap', iconSize: [170, 38], iconAnchor: [19, 19], popupAnchor: [0, -20],
-        html: `<div class="racer-icon ${selected ? 'selected' : ''}" style="background:${color};opacity:${iconOpacity}">${badgeHtml}<div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="opacity:${iconOpacity}">${conflict ? '⚠ ' : stale ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
+        html: `<div class="racer-icon ${selected ? 'selected' : ''}" style="background:${color};opacity:${iconOpacity}">${badgeHtml}${flyingBadgeHtml}<div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="opacity:${iconOpacity}">${flying ? '🪂 ' : ''}${conflict ? '⚠ ' : stale ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
       });
       let marker = state.racerMarkers.get(racer.id);
       if (!marker) {
@@ -966,10 +974,13 @@ import { useL10n } from '/vendor/use-l10n.js';
     const defaultTrack = defaultTrackCandidate(racer);
     const hasTrack = !!defaultTrack;
     const stale = isPositionStale(r);
+    const flying = isPositionFlying(r);
     const sourceLabel = `${r.sourceLabel || sourceTypeLabel(r.sourceType)}${stale ? ' (stale)' : ''}`;
     const staleWarning = stale ? `<br><b>⚠ Stale position</b>: last ${escapeHtml(sourceTypeLabel(r.sourceType))} update is older than ${sourceStaleThresholdMin(r.sourceType)} min` : '';
     const conflict = racer.sourceConflict ? `<br><b>⚠ Source conflict</b>: ${escapeHtml(racer.sourceConflict.message)}` : '';
-    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(sourceLabel)}${staleWarning}${conflict}${sourceDiagnosticsHtml(racer)}`;
+    const agl = Number.isFinite(r.aglM) ? `<br>${t('popup.agl')}: ${formatElevation(r.aglM)}` : '';
+    const flyingStatus = flying ? `<br>${t('status.flying')}: 🪂` : '';
+    const details = `Speed: ${escapeHtml(r.speedText)}<br>Elev: ${formatElevation(r.ele)}${agl}${flyingStatus}<br>Updated: ${escapeHtml(formatUpdatedTime(r))}<br>Source: ${escapeHtml(sourceLabel)}${staleWarning}${conflict}${sourceDiagnosticsHtml(racer)}`;
     const trackButton = hasTrack
       ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>`
       : '<button type="button" disabled title="The active source has not published enough history points for this racer yet">No track yet</button>';
@@ -2380,13 +2391,14 @@ import { useL10n } from '/vendor/use-l10n.js';
     const followed = state.selectedRacerIds.has(racer.id);
     const stale = r ? isPositionStale(r) : false;
     const conflict = !!racer.sourceConflict;
+    const flying = isPositionFlying(r);
     const updated = r ? (r.utcMs ? formatAge(Date.now() - r.utcMs) : (r.time || r.timeUtc || '—')) : '';
     const status = r ? t('info.updated', { value: updated || '—' }) : (racer.error || t('list.noPosition'));
     const distance = state.me && r ? ` · ${formatDistance(distanceM(state.me.lat, state.me.lon, r.lat, r.lon))}` : '';
     const hasTrack = !!defaultTrackCandidate(racer);
     const trackVisible = state.visibleRaceTrackIds.has(racer.id);
     const trackButton = `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}" ${hasTrack ? '' : 'disabled'}>${hasTrack ? (trackVisible ? t('list.hideTrack') : t('list.showTrack')) : t('list.noTrack')}</button>`;
-    return `<div class="racer-list-row ${followed ? 'followed' : ''} ${stale ? 'stale' : ''} ${conflict ? 'conflict' : ''}"><label><input type="checkbox" data-racer-follow="${escapeHtml(racer.id)}" ${followed ? 'checked' : ''}><span class="racer-list-dot" style="background:${racerColor(racer.id)}"></span><span class="racer-list-main"><b>${escapeHtml(racer.name)}</b><small>${escapeHtml(status)}${escapeHtml(distance)}</small></span></label><button type="button" data-racer-locate="${escapeHtml(racer.id)}" ${r ? '' : 'disabled'}>${t('list.map')}</button>${trackButton}</div>`;
+    return `<div class="racer-list-row ${followed ? 'followed' : ''} ${stale ? 'stale' : ''} ${conflict ? 'conflict' : ''} ${flying ? 'flying' : ''}"><label><input type="checkbox" data-racer-follow="${escapeHtml(racer.id)}" ${followed ? 'checked' : ''}><span class="racer-list-dot" style="background:${racerColor(racer.id)}"></span><span class="racer-list-main"><b>${flying ? '🪂 ' : ''}${escapeHtml(racer.name)}</b><small>${escapeHtml(status)}${escapeHtml(distance)}</small></span></label><button type="button" data-racer-locate="${escapeHtml(racer.id)}" ${r ? '' : 'disabled'}>${t('list.map')}</button>${trackButton}</div>`;
   }
 
   function updateFitButton() {
@@ -2828,6 +2840,11 @@ import { useL10n } from '/vendor/use-l10n.js';
   }
   function staleMinutes(r) { return r?.utcMs ? (Date.now() - r.utcMs) / 60000 : null; }
   function isPositionStale(position) { const age = staleMinutes(position); return age != null && age > sourceStaleThresholdMin(position?.sourceType); }
+  function isPositionFlying(position) {
+    const agl = Number(position?.aglM);
+    const speed = Number(position?.speedKmh);
+    return Number.isFinite(agl) && agl >= 60 && (agl >= 120 || (Number.isFinite(speed) && speed >= 12));
+  }
   function formatDistance(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
   function formatKm(m) { return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
   function formatElevation(m) { return m == null ? '—' : `${Math.round(m)} m`; }
