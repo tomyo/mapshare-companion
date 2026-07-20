@@ -73,10 +73,16 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.accuracy': 'Accuracy',
       'popup.agl': 'AGL',
       'popup.measureFromHere': 'Measure from here',
+      'popup.copyCoords': 'Copy coords',
+      'popup.shareLocation': 'Share',
+      'popup.waze': 'Waze',
       'measure.from': 'Measuring from',
       'measure.hint': 'Tap the map or a racer to update the endpoint.<br>Close this popup to stop.',
       'measure.info': 'Measuring: tap the map or a racer to choose or update the second point.',
       'measure.distance': 'Measured distance: {distance}',
+      'info.copiedCoords': 'Copied coordinates: {coords}',
+      'info.copyFailed': 'Could not copy coordinates.',
+      'info.shareFailed': 'Could not share location.',
       'kml.imported': 'Imported KML',
       'kml.shared': 'Shared KML',
       'kml.opened': 'Opened KML',
@@ -174,10 +180,16 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.accuracy': 'Precisión',
       'popup.agl': 'AGL',
       'popup.measureFromHere': 'Medir desde aquí',
+      'popup.copyCoords': 'Copiar coords.',
+      'popup.shareLocation': 'Compartir',
+      'popup.waze': 'Waze',
       'measure.from': 'Midiendo desde',
       'measure.hint': 'Toca el mapa o un corredor para actualizar el punto final.<br>Cierra este popup para terminar.',
       'measure.info': 'Midiendo: toca el mapa o un corredor para elegir o actualizar el segundo punto.',
       'measure.distance': 'Distancia medida: {distance}',
+      'info.copiedCoords': 'Coordenadas copiadas: {coords}',
+      'info.copyFailed': 'No se pudieron copiar las coordenadas.',
+      'info.shareFailed': 'No se pudo compartir la ubicación.',
       'kml.imported': 'KML importado',
       'kml.shared': 'KML compartido',
       'kml.opened': 'KML abierto',
@@ -275,10 +287,16 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.accuracy': 'Precisão',
       'popup.agl': 'AGL',
       'popup.measureFromHere': 'Medir daqui',
+      'popup.copyCoords': 'Copiar coords.',
+      'popup.shareLocation': 'Compartilhar',
+      'popup.waze': 'Waze',
       'measure.from': 'Medindo a partir de',
       'measure.hint': 'Toque no mapa ou em um atleta para atualizar o ponto final.<br>Feche este popup para parar.',
       'measure.info': 'Medindo: toque no mapa ou em um atleta para escolher ou atualizar o segundo ponto.',
       'measure.distance': 'Distância medida: {distance}',
+      'info.copiedCoords': 'Coordenadas copiadas: {coords}',
+      'info.copyFailed': 'Não foi possível copiar as coordenadas.',
+      'info.shareFailed': 'Não foi possível compartilhar o local.',
       'kml.imported': 'KML importado',
       'kml.shared': 'KML compartilhado',
       'kml.opened': 'KML aberto',
@@ -551,6 +569,20 @@ import { useL10n } from '/vendor/use-l10n.js';
       event.preventDefault();
       event.stopPropagation();
       toggleSourceTrack(sourceTrackButton.dataset.toggleSourceTrack, sourceTrackButton.dataset.sourceTrackRacer);
+      return;
+    }
+    const copyButton = event.target.closest('[data-copy-location-lat]');
+    if (copyButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      copyLocation(Number(copyButton.dataset.copyLocationLat), Number(copyButton.dataset.copyLocationLon));
+      return;
+    }
+    const shareButton = event.target.closest('[data-share-location-lat]');
+    if (shareButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      shareLocation(Number(shareButton.dataset.shareLocationLat), Number(shareButton.dataset.shareLocationLon), shareButton.dataset.shareLocationTitle || 'Selected location');
       return;
     }
     const measureButton = event.target.closest('[data-measure-lat]');
@@ -1950,10 +1982,57 @@ import { useL10n } from '/vendor/use-l10n.js';
   }
 
   function mapLinksHtml(lat, lon, title) {
-    return `<div class="map-popup-actions"><a href="${googlePointUrl(lat, lon)}" target="_blank" rel="noopener">Google Maps</a><a href="${osmPointUrl(lat, lon)}" target="_blank" rel="noopener">OSM</a><button type="button" data-measure-lat="${lat}" data-measure-lon="${lon}" data-measure-title="${escapeHtml(title)}">${t('popup.measureFromHere')}</button></div>`;
+    const safeTitle = escapeHtml(title);
+    return `<div class="map-popup-actions"><a href="${googlePointUrl(lat, lon)}" target="_blank" rel="noopener">Google Maps</a><a href="${wazePointUrl(lat, lon)}" target="_blank" rel="noopener">${t('popup.waze')}</a><a href="${osmPointUrl(lat, lon)}" target="_blank" rel="noopener">OSM</a><button type="button" data-copy-location-lat="${lat}" data-copy-location-lon="${lon}">${t('popup.copyCoords')}</button><button type="button" data-share-location-lat="${lat}" data-share-location-lon="${lon}" data-share-location-title="${safeTitle}">${t('popup.shareLocation')}</button><button type="button" data-measure-lat="${lat}" data-measure-lon="${lon}" data-measure-title="${safeTitle}">${t('popup.measureFromHere')}</button></div>`;
   }
 
+  async function copyLocation(lat, lon) {
+    const coords = locationCoordsText(lat, lon);
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(coords);
+      else fallbackCopyText(coords);
+      setText('info', t('info.copiedCoords', { coords }));
+    } catch (err) {
+      console.warn('Copy location failed', err);
+      setText('info', t('info.copyFailed'));
+    }
+  }
+
+  async function shareLocation(lat, lon, title) {
+    const coords = locationCoordsText(lat, lon);
+    const share = {
+      title: title || 'Selected location',
+      text: `${title || 'Selected location'}: ${coords}`,
+      url: googlePointUrl(lat, lon),
+    };
+    try {
+      if (navigator.share) await navigator.share(share);
+      else await copyLocation(lat, lon);
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      console.warn('Share location failed', err);
+      setText('info', t('info.shareFailed'));
+    }
+  }
+
+  function fallbackCopyText(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } finally {
+      textarea.remove();
+    }
+  }
+
+  function locationCoordsText(lat, lon) { return `${Number(lat).toFixed(6)},${Number(lon).toFixed(6)}`; }
   function googlePointUrl(lat, lon) { return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`; }
+  function wazePointUrl(lat, lon) { return `https://waze.com/ul?ll=${lat},${lon}&navigate=yes`; }
   function osmPointUrl(lat, lon) { return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`; }
 
   async function importKmlFile(event) {
