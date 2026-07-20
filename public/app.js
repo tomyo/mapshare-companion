@@ -104,6 +104,7 @@
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       closeTrackMenu();
+      closeRacerListPanel();
       clearMeasurement();
     }
   });
@@ -141,6 +142,12 @@
   $('fit-both').addEventListener('click', fitBoth);
   $('center-racer').addEventListener('click', centerRacer);
   $('center-me').addEventListener('click', centerMe);
+  $('racer-list').addEventListener('click', toggleRacerListPanel);
+  $('racer-list-close').addEventListener('click', closeRacerListPanel);
+  $('racer-list-follow-all').addEventListener('click', followAllRacers);
+  $('racer-list-clear').addEventListener('click', clearFollowedRacers);
+  $('racer-list-body').addEventListener('change', onRacerListChange);
+  $('racer-list-body').addEventListener('click', onRacerListClick);
   $('refresh').addEventListener('click', () => refreshAll());
   $('toggle-basemap').addEventListener('click', toggleBaseMap);
   $('toggle-kml').addEventListener('click', toggleKmlLayer);
@@ -522,6 +529,7 @@
       }
     }
     renderRaceTracks();
+    renderRacerList();
   }
 
   function raceMarkerTitle(racer) {
@@ -1607,6 +1615,8 @@
 
   function updateModeLayout() {
     document.querySelector('.stats')?.classList.toggle('hidden', state.raceMode);
+    $('racer-list')?.classList.toggle('hidden', !state.raceMode);
+    if (!state.raceMode) closeRacerListPanel();
   }
 
   function updateRaceSwitchMenu() {
@@ -1700,13 +1710,88 @@
 
   function toggleSelectedRacer(id) {
     if (!id || !state.raceMode) return;
-    if (state.selectedRacerIds.has(id)) state.selectedRacerIds.delete(id);
-    else state.selectedRacerIds.add(id);
+    setRacerFollowed(id, !state.selectedRacerIds.has(id));
+  }
+
+  function setRacerFollowed(id, followed) {
+    if (!id || !state.raceMode || !state.race) return;
+    if (followed) state.selectedRacerIds.add(id);
+    else state.selectedRacerIds.delete(id);
     saveSelectedRacers(state.race.id, state.selectedRacerIds);
     renderRaceRacers();
     refreshOpenRacerPopup(id);
     updatePanel();
     updateConnector();
+  }
+
+  function toggleRacerListPanel() {
+    if (!state.raceMode) return;
+    const panel = $('racer-list-panel');
+    const willOpen = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !willOpen);
+    if (willOpen) renderRacerList();
+  }
+
+  function closeRacerListPanel() {
+    $('racer-list-panel')?.classList.add('hidden');
+  }
+
+  function followAllRacers() {
+    if (!state.raceMode || !state.race) return;
+    state.selectedRacerIds = new Set(state.racers.map((racer) => racer.id));
+    saveSelectedRacers(state.race.id, state.selectedRacerIds);
+    renderRaceRacers();
+    updatePanel();
+    updateConnector();
+  }
+
+  function clearFollowedRacers() {
+    if (!state.raceMode || !state.race) return;
+    state.selectedRacerIds = new Set();
+    saveSelectedRacers(state.race.id, state.selectedRacerIds);
+    renderRaceRacers();
+    updatePanel();
+    updateConnector();
+  }
+
+  function onRacerListChange(event) {
+    const checkbox = event.target.closest('[data-racer-follow]');
+    if (!checkbox) return;
+    setRacerFollowed(checkbox.dataset.racerFollow, checkbox.checked);
+  }
+
+  function onRacerListClick(event) {
+    const locate = event.target.closest('[data-racer-locate]');
+    if (!locate) return;
+    const racer = state.racers.find((item) => item.id === locate.dataset.racerLocate);
+    if (racer?.position) state.map.setView([racer.position.lat, racer.position.lon], Math.max(state.map.getZoom(), 14));
+  }
+
+  function renderRacerList() {
+    if (!state.raceMode || !$('racer-list-body')) return;
+    const followed = state.selectedRacerIds.size;
+    const live = racePositions().length;
+    setText('racer-list-summary', `${followed} followed · ${live}/${state.racers.length} live`);
+    const sorted = state.racers.slice().sort((a, b) => {
+      const af = state.selectedRacerIds.has(a.id) ? 0 : 1;
+      const bf = state.selectedRacerIds.has(b.id) ? 0 : 1;
+      if (af !== bf) return af - bf;
+      const as = a.sourceConflict ? 0 : isPositionStale(a.position) ? 1 : 2;
+      const bs = b.sourceConflict ? 0 : isPositionStale(b.position) ? 1 : 2;
+      if (as !== bs) return as - bs;
+      return a.name.localeCompare(b.name);
+    });
+    $('racer-list-body').innerHTML = sorted.map(racerListRowHtml).join('');
+  }
+
+  function racerListRowHtml(racer) {
+    const r = racer.position;
+    const followed = state.selectedRacerIds.has(racer.id);
+    const stale = r ? isPositionStale(r) : false;
+    const conflict = !!racer.sourceConflict;
+    const status = conflict ? `⚠ ${racer.sourceConflict.message}` : r ? `${r.sourceLabel || sourceTypeLabel(r.sourceType)} · ${formatUpdatedTime(r)}${stale ? ' · stale' : ''}` : (racer.error || 'no position yet');
+    const distance = state.me && r ? ` · ${formatDistance(distanceM(state.me.lat, state.me.lon, r.lat, r.lon))}` : '';
+    return `<div class="racer-list-row ${followed ? 'followed' : ''} ${stale ? 'stale' : ''} ${conflict ? 'conflict' : ''}"><label><input type="checkbox" data-racer-follow="${escapeHtml(racer.id)}" ${followed ? 'checked' : ''}><span class="racer-list-dot" style="background:${racerColor(racer.id)}"></span><span class="racer-list-main"><b>${escapeHtml(racer.name)}</b><small>${escapeHtml(status)}${escapeHtml(distance)}</small></span></label><button type="button" data-racer-locate="${escapeHtml(racer.id)}" ${r ? '' : 'disabled'}>Map</button></div>`;
   }
 
   function updateFitButton() {
@@ -2135,7 +2220,7 @@
     const days = Math.round(hours / 24);
     return `${days} d ago`;
   }
-  function staleMinutes(r) { return r.utcMs ? (Date.now() - r.utcMs) / 60000 : null; }
+  function staleMinutes(r) { return r?.utcMs ? (Date.now() - r.utcMs) / 60000 : null; }
   function isPositionStale(position) { const age = staleMinutes(position); return age != null && age > sourceStaleThresholdMin(position?.sourceType); }
   function formatDistance(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
   function formatKm(m) { return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }

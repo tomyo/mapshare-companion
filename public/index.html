@@ -66,6 +66,7 @@
       <button id="fit-both" type="button">Fit both</button>
       <button id="center-racer" type="button">Racer</button>
       <button id="center-me" type="button">Me</button>
+      <button id="racer-list" class="hidden" type="button">List</button>
       <button id="toggle-basemap" type="button" title="Toggle map type">🗺️ Topo</button>
       <button id="toggle-kml" class="hidden" type="button">Hide KML</button>
       <input id="kml-file" class="hidden" type="file" accept=".kml,application/vnd.google-earth.kml+xml,application/xml,text/xml" />
@@ -73,6 +74,17 @@
 
     <div id="info" class="info">Loading…</div>
     <div id="map"></div>
+    <aside id="racer-list-panel" class="racer-list-panel hidden" aria-label="Racers list">
+      <div class="racer-list-head">
+        <div><b>Racers</b><span id="racer-list-summary">—</span></div>
+        <button id="racer-list-close" type="button" aria-label="Close racer list">×</button>
+      </div>
+      <div class="racer-list-actions">
+        <button id="racer-list-follow-all" type="button">Follow all</button>
+        <button id="racer-list-clear" type="button">Clear followed</button>
+      </div>
+      <div id="racer-list-body" class="racer-list-body"></div>
+    </aside>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
