@@ -16,7 +16,6 @@ import { useL10n } from '/vendor/use-l10n.js';
   const REFRESH_MS = 60000;
   const SPOT_REFRESH_MS = 150000;
   const STALE_AFTER_MIN = 15;
-  const SOURCE_STALE_MIN = { flymaster: 5, 'garmin-mapshare': 15, spot: 30 };
   const SOURCE_CONFLICT_DISTANCE_M = 1000;
   const TRACK_SPIKE_MIN_M = 700;
   const TRACK_GAP_M = 2500;
@@ -1021,7 +1020,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       const badge = conflict ? '!' : '';
       const badgeTitle = conflict ? 'Source discrepancy' : '';
       const badgeHtml = badge ? `<div class="racer-status-badge" title="${badgeTitle}" style="position:absolute;right:-5px;top:-7px;width:17px;height:17px;border-radius:50%;background:#f97316;color:#fff;border:2px solid #fff;font:900 11px/13px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">${badge}</div>` : '';
-      const iconOpacity = stale ? 0.55 : 1;
+      const iconOpacity = stale ? 0.6 : 1;
       const icon = L.divIcon({
         className: 'racer-icon-wrap', iconSize: [160, 32], iconAnchor: [14 - offset[0], 14 - offset[1]], popupAnchor: [0, -18],
         html: `<div class="racer-icon ${activity ? 'has-activity' : ''} ${activity || ''} ${selected ? 'selected' : ''}" style="background:${color};opacity:${iconOpacity}">${badgeHtml}${activity ? `<span class="racer-activity-symbol">${activityIcon}</span>` : ''}<div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="${labelStyle}">${conflict ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
@@ -1062,8 +1061,8 @@ import { useL10n } from '/vendor/use-l10n.js';
     const hasTrack = !!defaultTrack;
     const stale = isPositionStale(r);
     const activity = positionActivity(r);
-    const sourceLabel = `${r.sourceLabel || sourceTypeLabel(r.sourceType)}${stale ? ' (stale)' : ''}`;
-    const staleWarning = stale ? `<br><b>⚠ Stale position</b>: last ${escapeHtml(sourceTypeLabel(r.sourceType))} update is older than ${sourceStaleThresholdMin(r.sourceType)} min` : '';
+    const sourceLabel = r.sourceLabel || sourceTypeLabel(r.sourceType);
+    const staleWarning = stale ? `<br><b>⚠ Stale</b>: updated ${escapeHtml(formatPositionAge(r))}` : '';
     const conflict = racer.sourceConflict ? `<br><b>⚠ Source conflict</b>: ${escapeHtml(racer.sourceConflict.message)}` : '';
     const agl = Number.isFinite(r.aglM) ? `<br>${t('popup.agl')}: ${formatElevation(r.aglM)}` : '';
     const activityStatus = activity ? `<br>${t('popup.status')}: ${activityStatusIcon(activity)} ${escapeHtml(activityStatusLabel(activity))}` : '';
@@ -1075,18 +1074,16 @@ import { useL10n } from '/vendor/use-l10n.js';
   }
 
   function sourceDiagnosticsHtml(racer) {
-    if (!racer.sources || racer.sources.length <= 1) return '';
+    if (!racer.sourceConflict || !racer.sources || racer.sources.length <= 1) return '';
     const rows = racer.sources.map((source) => {
       const latest = source.latestPosition;
       const active = isActiveSource(racer.position, source);
-      const stale = !!(latest && isSourcePositionStale(source, latest));
       const distance = latest && racer.position && !active ? ` · ${formatDistance(distanceM(racer.position.lat, racer.position.lon, latest.lat, latest.lon))} from active` : '';
-      const staleLabel = stale ? ` · stale >${sourceStaleThresholdMin(source.type)} min` : '';
       const errorLabel = source.lastError && !latest ? `error: ${source.lastError}` : '';
-      const status = latest ? `${formatUpdatedTime(latest)}${staleLabel}${distance}` : errorLabel || 'no data yet';
-      const color = active && !stale ? '#16a34a' : active && stale ? '#b45309' : stale ? '#b45309' : latest ? '#475569' : '#991b1b';
+      const status = latest ? `${formatPositionAge(latest)}${distance}` : errorLabel || 'no data yet';
+      const color = active ? '#16a34a' : latest ? '#475569' : '#991b1b';
       const label = sourceDisplayLabel(source);
-      const activeText = active ? (stale ? ' · shown on map (stale)' : ' · shown on map') : '';
+      const activeText = active ? ' · shown on map' : '';
       return `<div style="margin-top:2px"><span style="display:inline-block;width:.65em;height:.65em;border-radius:50%;background:${color};margin-right:4px"></span><b>${escapeHtml(label)}</b>${activeText} · ${escapeHtml(status)}</div>`;
     }).join('');
     return `<br><div style="margin-top:6px"><b>Sources</b>${rows}</div>`;
@@ -1458,7 +1455,6 @@ import { useL10n } from '/vendor/use-l10n.js';
     const fresh = valid.filter((item) => !item.stale);
     return newestSourceCandidate(fresh.filter((item) => item.source.type === 'flymaster'))
       || newestSourceCandidate(fresh)
-      || newestSourceCandidate(valid.filter((item) => item.source.type === 'flymaster'))
       || newestSourceCandidate(valid)
       || null;
   }
@@ -1472,12 +1468,7 @@ import { useL10n } from '/vendor/use-l10n.js';
   }
 
   function isSourcePositionStale(source, position) {
-    const age = staleMinutes(position);
-    return age != null && age > sourceStaleThresholdMin(source?.type || position?.sourceType);
-  }
-
-  function sourceStaleThresholdMin(type) {
-    return SOURCE_STALE_MIN[type] || STALE_AFTER_MIN;
+    return isPositionStale(position);
   }
 
   function detectSourceConflict(active, candidates) {
@@ -2985,7 +2976,8 @@ import { useL10n } from '/vendor/use-l10n.js';
     return t('age.daysAgo', { count: days });
   }
   function staleMinutes(r) { return r?.utcMs ? (Date.now() - r.utcMs) / 60000 : null; }
-  function isPositionStale(position) { const age = staleMinutes(position); return age != null && age > sourceStaleThresholdMin(position?.sourceType); }
+  function isPositionStale(position) { const age = staleMinutes(position); return age != null && age > STALE_AFTER_MIN; }
+  function formatPositionAge(position) { return position?.utcMs ? formatAge(Date.now() - position.utcMs) : (position?.time || position?.timeUtc || '—'); }
   function isPositionFlying(position) {
     const agl = Number(position?.aglM);
     const speed = Number(position?.speedKmh);
