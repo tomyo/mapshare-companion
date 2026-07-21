@@ -1016,11 +1016,11 @@ import { useL10n } from '/vendor/use-l10n.js';
       const activityIcon = activityStatusIcon(activity);
       const color = racerColor(racer.id);
       const offset = markerOffsets.get(racer.id) || [0, 0];
+      const iconOpacity = stale ? 0.6 : 1;
       const labelStyle = racerLabelStyle(offset, iconOpacity);
       const badge = conflict ? '!' : '';
       const badgeTitle = conflict ? 'Source discrepancy' : '';
       const badgeHtml = badge ? `<div class="racer-status-badge" title="${badgeTitle}" style="position:absolute;right:-5px;top:-7px;width:17px;height:17px;border-radius:50%;background:#f97316;color:#fff;border:2px solid #fff;font:900 11px/13px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">${badge}</div>` : '';
-      const iconOpacity = stale ? 0.6 : 1;
       const icon = L.divIcon({
         className: 'racer-icon-wrap', iconSize: [160, 32], iconAnchor: [14 - offset[0], 14 - offset[1]], popupAnchor: [0, -18],
         html: `<div class="racer-icon ${activity ? 'has-activity' : ''} ${activity || ''} ${selected ? 'selected' : ''}" style="background:${color};opacity:${iconOpacity}">${badgeHtml}${activity ? `<span class="racer-activity-symbol">${activityIcon}</span>` : ''}<div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="${labelStyle}">${conflict ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
