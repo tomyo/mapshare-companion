@@ -1798,6 +1798,7 @@ import { useL10n } from '/vendor/use-l10n.js';
         bubblingMouseEvents: false,
       }).addTo(state.waypointLayer);
       const details = wp.radiusM ? `Radius: ${formatDistance(wp.radiusM)}${wp.distanceKm ? `<br>Leg/Dist: ${Number(wp.distanceKm).toFixed(1)} km` : ''}` : '';
+      marker.on('click', (event) => handleMeasurableMarkerClick(marker, event));
       marker.bindPopup(locationPopupHtml(`Waypoint: ${wp.name}`, wp.lat, wp.lon, details));
       if (wp.radiusM && wp.radiusM > 0) {
         L.circle([wp.lat, wp.lon], {
@@ -1943,7 +1944,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     if (event?.originalEvent) L.DomEvent.stop(event.originalEvent);
     const ll = marker.getLatLng();
     updateMeasurement(ll.lat, ll.lng);
-    setTimeout(() => marker.closePopup(), 0);
+    setTimeout(() => marker.closePopup?.(), 0);
   }
 
   function updateMeasurement(lat, lon) {
@@ -1984,7 +1985,7 @@ import { useL10n } from '/vendor/use-l10n.js';
 
   function mapLinksHtml(lat, lon, title) {
     const safeTitle = escapeHtml(title);
-    return `<div class="map-popup-actions"><a href="${googlePointUrl(lat, lon)}" target="_blank" rel="noopener">Google Maps</a><a href="${wazePointUrl(lat, lon)}" target="_blank" rel="noopener">${t('popup.waze')}</a><a href="${osmPointUrl(lat, lon)}" target="_blank" rel="noopener">OSM</a><button type="button" data-copy-location-lat="${lat}" data-copy-location-lon="${lon}">${t('popup.copyCoords')}</button><button type="button" data-share-location-lat="${lat}" data-share-location-lon="${lon}" data-share-location-title="${safeTitle}">${t('popup.shareLocation')}</button><button type="button" data-measure-lat="${lat}" data-measure-lon="${lon}" data-measure-title="${safeTitle}">${t('popup.measureFromHere')}</button></div>`;
+    return `<div class="map-popup-actions"><a href="${googlePointUrl(lat, lon)}" target="_blank" rel="noopener">Google Maps</a><a href="${wazePointUrl(lat, lon)}" target="_blank" rel="noopener">${t('popup.waze')}</a><a href="${osmPointUrl(lat, lon)}" target="_blank" rel="noopener">OSM</a><button type="button" data-copy-location-lat="${lat}" data-copy-location-lon="${lon}">${t('popup.copyCoords')}</button><button type="button" data-share-location-lat="${lat}" data-share-location-lon="${lon}" data-share-location-title="${safeTitle}">${t('popup.shareLocation')}</button><button type="button" data-measure-lat="${lat}" data-measure-lon="${lon}" data-measure-title="${safeTitle}">📏 ${t('popup.measureFromHere')}</button></div>`;
   }
 
   async function copyLocation(lat, lon) {
@@ -2132,9 +2133,10 @@ import { useL10n } from '/vendor/use-l10n.js';
       bounds.push(...line.points);
     }
     for (const point of imported.points) {
-      L.circleMarker([point.lat, point.lon], { radius: 6, color: '#9a3412', fillColor: '#f97316', fillOpacity: 1, weight: 2 })
-        .bindPopup(locationPopupHtml(`KML: ${point.name}`, point.lat, point.lon))
+      const marker = L.circleMarker([point.lat, point.lon], { radius: 6, color: '#9a3412', fillColor: '#f97316', fillOpacity: 1, weight: 2 })
         .addTo(state.kmlLayer);
+      marker.on('click', (event) => handleMeasurableMarkerClick(marker, event));
+      marker.bindPopup(locationPopupHtml(`KML: ${point.name}`, point.lat, point.lon));
       bounds.push([point.lat, point.lon]);
     }
     if (state.kmlVisible) state.kmlLayer.addTo(state.map);
