@@ -958,8 +958,42 @@ import { useL10n } from '/vendor/use-l10n.js';
     return Object.assign({}, position, { history: position.history ? position.history.map((p) => Object.assign({}, p)) : position.history });
   }
 
+  function raceMarkerOffsets() {
+    const offsets = new Map();
+    if (!state.map) return offsets;
+    const items = state.racers.filter((racer) => racer.position).map((racer) => ({ racer, point: state.map.latLngToLayerPoint([racer.position.lat, racer.position.lon]) }));
+    const visited = new Set();
+    const thresholdPx = 34;
+    for (const item of items) {
+      if (visited.has(item.racer.id)) continue;
+      const cluster = [];
+      const queue = [item];
+      visited.add(item.racer.id);
+      while (queue.length) {
+        const current = queue.shift();
+        cluster.push(current);
+        for (const other of items) {
+          if (visited.has(other.racer.id)) continue;
+          if (current.point.distanceTo(other.point) <= thresholdPx) {
+            visited.add(other.racer.id);
+            queue.push(other);
+          }
+        }
+      }
+      if (cluster.length <= 1) continue;
+      cluster.sort((a, b) => a.racer.name.localeCompare(b.racer.name));
+      const radius = Math.min(46, 20 + cluster.length * 2);
+      cluster.forEach((entry, index) => {
+        const angle = -Math.PI / 2 + (index * 2 * Math.PI / cluster.length);
+        offsets.set(entry.racer.id, [Math.round(Math.cos(angle) * radius), Math.round(Math.sin(angle) * radius)]);
+      });
+    }
+    return offsets;
+  }
+
   function renderRaceRacers() {
     const seen = new Set();
+    const markerOffsets = raceMarkerOffsets();
     for (const racer of state.racers) {
       if (!racer.position) continue;
       seen.add(racer.id);
@@ -971,12 +1005,13 @@ import { useL10n } from '/vendor/use-l10n.js';
       const activity = positionActivity(r);
       const activityIcon = activityStatusIcon(activity);
       const color = racerColor(racer.id);
+      const offset = markerOffsets.get(racer.id) || [0, 0];
       const badge = conflict ? '!' : '';
       const badgeTitle = conflict ? 'Source discrepancy' : '';
       const badgeHtml = badge ? `<div class="racer-status-badge" title="${badgeTitle}" style="position:absolute;right:-5px;top:-7px;width:17px;height:17px;border-radius:50%;background:#f97316;color:#fff;border:2px solid #fff;font:900 11px/13px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">${badge}</div>` : '';
       const iconOpacity = stale ? 0.55 : 1;
       const icon = L.divIcon({
-        className: 'racer-icon-wrap', iconSize: [160, 32], iconAnchor: [14, 14], popupAnchor: [0, -18],
+        className: 'racer-icon-wrap', iconSize: [160, 32], iconAnchor: [14 - offset[0], 14 - offset[1]], popupAnchor: [0, -18],
         html: `<div class="racer-icon ${activity || ''} ${selected ? 'selected' : ''}" style="${activity ? '' : `background:${color};`}opacity:${iconOpacity}">${badgeHtml}${activity ? `<span class="racer-activity-symbol">${activityIcon}</span>` : ''}<div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="opacity:${iconOpacity}">${activityIcon ? `${activityIcon} ` : ''}${conflict ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
       });
       let marker = state.racerMarkers.get(racer.id);
