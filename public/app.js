@@ -391,6 +391,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     measureStart: null,
     measurePopup: null,
     refreshTimer: null,
+    racerPopupRefreshTimer: null,
     geoWatch: null,
     racer: null,
     me: null,
@@ -413,6 +414,7 @@ import { useL10n } from '/vendor/use-l10n.js';
   };
 
   let translateIntoLanguage = async () => {};
+  state.racerPopupRefreshTimer = setInterval(refreshOpenRacerPopups, 5000);
 
   function normalizeLanguage(value) {
     const lang = String(value || '').toLowerCase();
@@ -612,7 +614,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       return;
     }
     if (state.measureStart && state.map && !state.map.getContainer().contains(event.target)) clearMeasurement();
-  });
+  }, true);
   $('fit-both').addEventListener('click', fitBoth);
   $('center-racer').addEventListener('click', centerRacer);
   $('center-me').addEventListener('click', centerMe);
@@ -1121,6 +1123,17 @@ import { useL10n } from '/vendor/use-l10n.js';
     const marker = state.racerMarkers.get(racerId);
     const racer = state.racers.find((item) => item.id === racerId);
     if (marker?.isPopupOpen() && racer?.position) marker.setPopupContent(raceRacerPopupHtml(racer));
+  }
+
+  function refreshOpenRacerPopups() {
+    if (state.racerMarker?.isPopupOpen() && state.racer) {
+      state.racerMarker.setPopupContent(soloRacerPopupHtml(state.racer));
+    }
+    for (const [racerId, marker] of state.racerMarkers.entries()) {
+      if (!marker.isPopupOpen()) continue;
+      const racer = state.racers.find((item) => item.id === racerId);
+      if (racer?.position) marker.setPopupContent(raceRacerPopupHtml(racer));
+    }
   }
 
   function sourceDiagnosticsHtml(racer) {
