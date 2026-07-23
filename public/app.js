@@ -1029,8 +1029,13 @@ import { useL10n } from '/vendor/use-l10n.js';
       const stale = isPositionStale(r);
       const conflict = !!racer.sourceConflict;
       const activity = positionActivity(r);
-      const activityIcon = activityStatusIcon(activity);
-      const color = racerColor(racer.id);
+      const activityIcon = racerMarkerIcon(activity);
+      const trackVisible = hasVisibleRaceTrack(racer.id);
+      const highlighted = selected || trackVisible;
+      const color = highlighted ? racerColor(racer.id) : '#334155';
+      const iconBackground = highlighted ? color : 'transparent';
+      const iconInk = highlighted ? '#fff' : '#0f172a';
+      const iconBorder = highlighted ? '#fff' : 'rgba(15,23,42,.72)';
       const offset = markerOffsets.get(racer.id) || [0, 0];
       const iconOpacity = stale ? 0.6 : 1;
       const labelStyle = racerLabelStyle(offset, iconOpacity);
@@ -1039,7 +1044,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       const badgeHtml = badge ? `<div class="racer-status-badge" title="${badgeTitle}" style="position:absolute;right:-5px;top:-7px;width:17px;height:17px;border-radius:50%;background:#f97316;color:#fff;border:2px solid #fff;font:900 11px/13px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">${badge}</div>` : '';
       const icon = L.divIcon({
         className: 'racer-icon-wrap', iconSize: [160, 32], iconAnchor: [14 - offset[0], 14 - offset[1]], popupAnchor: [0, -18],
-        html: `<div class="racer-icon ${activity ? 'has-activity' : ''} ${activity || ''} ${selected ? 'selected' : ''}" style="background:${color};opacity:${iconOpacity}">${badgeHtml}${activity ? `<span class="racer-activity-symbol">${activityIcon}</span>` : ''}<div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="${labelStyle}">${conflict ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
+        html: `<div class="racer-icon has-symbol ${activity || 'stationary'} ${selected ? 'selected' : ''} ${trackVisible ? 'track-visible' : ''} ${highlighted ? 'highlighted' : 'muted'}" style="--racer-bg:${iconBackground};--racer-color:${color};--racer-ink:${iconInk};--racer-border:${iconBorder};opacity:${iconOpacity}">${badgeHtml}<span class="racer-activity-symbol">${activityIcon}</span><div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.35}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="${labelStyle}">${conflict ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
       });
       let marker = state.racerMarkers.get(racer.id);
       if (!marker) {
@@ -1925,9 +1930,11 @@ import { useL10n } from '/vendor/use-l10n.js';
   function updateRacerLayer() {
     const r = state.racer;
     const ll = [r.lat, r.lon];
+    const color = '#e03131';
+    const activity = positionActivity(r);
     const icon = L.divIcon({
       className: 'racer-icon-wrap', iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -18],
-      html: `<div class="racer-icon"><div class="racer-arrow" style="transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.25}"></div></div>`,
+      html: `<div class="racer-icon has-symbol ${activity || 'stationary'} highlighted" style="--racer-bg:${color};--racer-color:${color};--racer-ink:#fff;--racer-border:#fff"><span class="racer-activity-symbol">${racerMarkerIcon(activity)}</span><div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.35}"></div></div>`,
     });
     if (!state.racerMarker) {
       state.racerMarker = L.marker(ll, { icon, zIndexOffset: 4000, title: r.name, bubblingMouseEvents: false }).addTo(state.layers);
@@ -3064,8 +3071,15 @@ import { useL10n } from '/vendor/use-l10n.js';
     const agl = Number(position.aglM);
     return Number.isFinite(agl) && agl < 60 ? 'walking' : '';
   }
+  function racerMarkerIcon(activity) { return activity === 'flying' ? '🪂' : activity === 'walking' ? '🚶' : '●'; }
   function activityStatusIcon(activity) { return activity === 'flying' ? '🪂' : activity === 'walking' ? '🚶' : ''; }
   function activityStatusLabel(activity) { return activity === 'flying' ? t('status.flying') : activity === 'walking' ? t('status.walking') : ''; }
+  function hasVisibleRaceTrack(racerId) {
+    if (state.visibleRaceTrackIds.has(racerId)) return true;
+    const prefix = `${racerId}::`;
+    for (const id of state.visibleRaceTrackIds) if (String(id).startsWith(prefix)) return true;
+    return false;
+  }
   function formatDistance(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
   function formatKm(m) { return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`; }
   function formatElevation(m) { return m == null ? '—' : `${Math.round(m)} m`; }
