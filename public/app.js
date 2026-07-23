@@ -414,7 +414,7 @@ import { useL10n } from '/vendor/use-l10n.js';
   };
 
   let translateIntoLanguage = async () => {};
-  state.racerPopupRefreshTimer = setInterval(refreshOpenRacerPopups, 5000);
+  state.racerPopupRefreshTimer = setInterval(refreshOpenRacerPopups, 1000);
 
   function normalizeLanguage(value) {
     const lang = String(value || '').toLowerCase();
@@ -1050,6 +1050,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       if (!marker) {
         marker = L.marker(ll, { icon, zIndexOffset: selected ? 4500 : 4000, title: raceMarkerTitle(racer), bubblingMouseEvents: false }).addTo(state.layers);
         marker.on('click', (event) => handleMeasurableMarkerClick(marker, event));
+        marker.on('popupopen', () => wireRacerPopupToggle(marker));
         marker.on('popupclose', () => state.expandedRacerPopupIds.delete(raceRacerPopupKey(racer.id)));
         state.racerMarkers.set(racer.id, marker);
       } else {
@@ -1058,9 +1059,7 @@ import { useL10n } from '/vendor/use-l10n.js';
         marker.setZIndexOffset(selected ? 4500 : 4000);
         marker.options.title = raceMarkerTitle(racer);
       }
-      const popupHtml = raceRacerPopupHtml(racer);
-      marker.bindPopup(popupHtml, { autoPan: false, keepInView: false });
-      if (marker.isPopupOpen()) marker.setPopupContent(popupHtml);
+      syncMarkerPopup(marker, raceRacerPopupHtml(racer), { autoPan: false, keepInView: false });
     }
     for (const [id, marker] of state.racerMarkers.entries()) {
       if (!seen.has(id)) {
@@ -1111,6 +1110,25 @@ import { useL10n } from '/vendor/use-l10n.js';
     return `${infoHtml}${actions}<button type="button" class="racer-popup-toggle-actions" data-toggle-racer-popup-actions="${escapeHtml(popupKey)}" aria-expanded="${expanded}">${toggleText}</button>`;
   }
 
+  function syncMarkerPopup(marker, html, options) {
+    if (!marker) return;
+    if (marker.getPopup?.()) marker.setPopupContent(html);
+    else marker.bindPopup(html, options);
+    if (marker.isPopupOpen?.()) wireRacerPopupToggle(marker);
+  }
+
+  function wireRacerPopupToggle(marker) {
+    const button = marker?.getPopup?.()?.getElement?.()?.querySelector('[data-toggle-racer-popup-actions]');
+    if (!button || button.dataset.racerPopupToggleWired) return;
+    button.dataset.racerPopupToggleWired = '1';
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      toggleRacerPopupActions(button.dataset.toggleRacerPopupActions);
+    });
+  }
+
   function toggleRacerPopupActions(popupKey) {
     if (!popupKey) return;
     if (state.expandedRacerPopupIds.has(popupKey)) state.expandedRacerPopupIds.delete(popupKey);
@@ -1120,24 +1138,24 @@ import { useL10n } from '/vendor/use-l10n.js';
 
   function refreshOpenRacerPopup(popupKey) {
     if (popupKey === 'solo') {
-      if (state.racerMarker?.isPopupOpen() && state.racer) state.racerMarker.setPopupContent(soloRacerPopupHtml(state.racer));
+      if (state.racerMarker?.isPopupOpen() && state.racer) syncMarkerPopup(state.racerMarker, soloRacerPopupHtml(state.racer), { autoPan: false, keepInView: false });
       return;
     }
     if (!popupKey.startsWith('race:')) return;
     const racerId = popupKey.slice(5);
     const marker = state.racerMarkers.get(racerId);
     const racer = state.racers.find((item) => item.id === racerId);
-    if (marker?.isPopupOpen() && racer?.position) marker.setPopupContent(raceRacerPopupHtml(racer));
+    if (marker?.isPopupOpen() && racer?.position) syncMarkerPopup(marker, raceRacerPopupHtml(racer), { autoPan: false, keepInView: false });
   }
 
   function refreshOpenRacerPopups() {
     if (state.racerMarker?.isPopupOpen() && state.racer) {
-      state.racerMarker.setPopupContent(soloRacerPopupHtml(state.racer));
+      syncMarkerPopup(state.racerMarker, soloRacerPopupHtml(state.racer), { autoPan: false, keepInView: false });
     }
     for (const [racerId, marker] of state.racerMarkers.entries()) {
       if (!marker.isPopupOpen()) continue;
       const racer = state.racers.find((item) => item.id === racerId);
-      if (racer?.position) marker.setPopupContent(raceRacerPopupHtml(racer));
+      if (racer?.position) syncMarkerPopup(marker, raceRacerPopupHtml(racer), { autoPan: false, keepInView: false });
     }
   }
 
@@ -1281,7 +1299,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     }
     saveVisibleRaceTracks(state.race.id, state.visibleRaceTrackIds);
     renderRaceTracks();
-    refreshOpenRacerPopup(id);
+    refreshOpenRacerPopup(raceRacerPopupKey(id));
     renderRacerList();
   }
 
@@ -1298,15 +1316,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     else state.visibleRaceTrackIds.add(key);
     saveVisibleRaceTracks(state.race.id, state.visibleRaceTrackIds);
     renderRaceTracks();
-    refreshOpenRacerPopup(racerId);
-  }
-
-  function refreshOpenRacerPopup(id) {
-    const racer = state.racers.find((item) => item.id === id);
-    const marker = state.racerMarkers.get(id);
-    if (!racer || !marker) return;
-    const popup = marker.getPopup && marker.getPopup();
-    if (popup) popup.setContent(raceRacerPopupHtml(racer));
+    refreshOpenRacerPopup(raceRacerPopupKey(racerId));
   }
 
   async function loadMapFeatures(mapName = state.mapName) {
@@ -1939,11 +1949,10 @@ import { useL10n } from '/vendor/use-l10n.js';
     if (!state.racerMarker) {
       state.racerMarker = L.marker(ll, { icon, zIndexOffset: 4000, title: r.name, bubblingMouseEvents: false }).addTo(state.layers);
       state.racerMarker.on('click', (event) => handleMeasurableMarkerClick(state.racerMarker, event));
+      state.racerMarker.on('popupopen', () => wireRacerPopupToggle(state.racerMarker));
       state.racerMarker.on('popupclose', () => state.expandedRacerPopupIds.delete('solo'));
     } else { state.racerMarker.setLatLng(ll); state.racerMarker.setIcon(icon); }
-    const popupHtml = soloRacerPopupHtml(r);
-    state.racerMarker.bindPopup(popupHtml, { autoPan: false, keepInView: false });
-    if (state.racerMarker.isPopupOpen()) state.racerMarker.setPopupContent(popupHtml);
+    syncMarkerPopup(state.racerMarker, soloRacerPopupHtml(r), { autoPan: false, keepInView: false });
     if (r.history) state.racerTrail.setLatLngs(r.history.map((p) => [p.lat, p.lon]));
     updateSourceFeaturesMenu();
     updateConnector();
