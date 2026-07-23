@@ -1059,7 +1059,7 @@ import { useL10n } from '/vendor/use-l10n.js';
         marker.setZIndexOffset(selected ? 4500 : 4000);
         marker.options.title = raceMarkerTitle(racer);
       }
-      syncMarkerPopup(marker, raceRacerPopupHtml(racer), { autoPan: false, keepInView: false });
+      syncMarkerPopup(marker, raceRacerPopupHtml(racer), racerPopupOptions());
     }
     for (const [id, marker] of state.racerMarkers.entries()) {
       if (!seen.has(id)) {
@@ -1110,10 +1110,17 @@ import { useL10n } from '/vendor/use-l10n.js';
     return `${infoHtml}${actions}<button type="button" class="racer-popup-toggle-actions" data-toggle-racer-popup-actions="${escapeHtml(popupKey)}" aria-expanded="${expanded}">${toggleText}</button>`;
   }
 
-  function syncMarkerPopup(marker, html, options) {
+  function racerPopupOptions() {
+    return { autoPan: false, keepInView: false, autoClose: false, closeOnClick: false };
+  }
+
+  function syncMarkerPopup(marker, html, options = racerPopupOptions()) {
     if (!marker) return;
-    if (marker.getPopup?.()) marker.setPopupContent(html);
-    else marker.bindPopup(html, options);
+    const popup = marker.getPopup?.();
+    if (popup) {
+      Object.assign(popup.options, options);
+      marker.setPopupContent(html);
+    } else marker.bindPopup(html, options);
     if (marker.isPopupOpen?.()) wireRacerPopupToggle(marker);
   }
 
@@ -1138,24 +1145,24 @@ import { useL10n } from '/vendor/use-l10n.js';
 
   function refreshOpenRacerPopup(popupKey) {
     if (popupKey === 'solo') {
-      if (state.racerMarker?.isPopupOpen() && state.racer) syncMarkerPopup(state.racerMarker, soloRacerPopupHtml(state.racer), { autoPan: false, keepInView: false });
+      if (state.racerMarker?.isPopupOpen() && state.racer) syncMarkerPopup(state.racerMarker, soloRacerPopupHtml(state.racer));
       return;
     }
     if (!popupKey.startsWith('race:')) return;
     const racerId = popupKey.slice(5);
     const marker = state.racerMarkers.get(racerId);
     const racer = state.racers.find((item) => item.id === racerId);
-    if (marker?.isPopupOpen() && racer?.position) syncMarkerPopup(marker, raceRacerPopupHtml(racer), { autoPan: false, keepInView: false });
+    if (marker?.isPopupOpen() && racer?.position) syncMarkerPopup(marker, raceRacerPopupHtml(racer));
   }
 
   function refreshOpenRacerPopups() {
     if (state.racerMarker?.isPopupOpen() && state.racer) {
-      syncMarkerPopup(state.racerMarker, soloRacerPopupHtml(state.racer), { autoPan: false, keepInView: false });
+      syncMarkerPopup(state.racerMarker, soloRacerPopupHtml(state.racer));
     }
     for (const [racerId, marker] of state.racerMarkers.entries()) {
       if (!marker.isPopupOpen()) continue;
       const racer = state.racers.find((item) => item.id === racerId);
-      if (racer?.position) syncMarkerPopup(marker, raceRacerPopupHtml(racer), { autoPan: false, keepInView: false });
+      if (racer?.position) syncMarkerPopup(marker, raceRacerPopupHtml(racer));
     }
   }
 
@@ -1952,7 +1959,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       state.racerMarker.on('popupopen', () => wireRacerPopupToggle(state.racerMarker));
       state.racerMarker.on('popupclose', () => state.expandedRacerPopupIds.delete('solo'));
     } else { state.racerMarker.setLatLng(ll); state.racerMarker.setIcon(icon); }
-    syncMarkerPopup(state.racerMarker, soloRacerPopupHtml(r), { autoPan: false, keepInView: false });
+    syncMarkerPopup(state.racerMarker, soloRacerPopupHtml(r));
     if (r.history) state.racerTrail.setLatLngs(r.history.map((p) => [p.lat, p.lon]));
     updateSourceFeaturesMenu();
     updateConnector();
