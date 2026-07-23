@@ -77,6 +77,8 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.copyCoords': 'Copy coords',
       'popup.shareLocation': 'Share',
       'popup.waze': 'Waze',
+      'popup.showActions': 'Show actions',
+      'popup.hideActions': 'Hide actions',
       'measure.from': 'Measuring from',
       'measure.hint': 'Tap the map or a racer to update the endpoint.<br>Close this popup to stop.',
       'measure.info': 'Measuring: tap the map or a racer to choose or update the second point.',
@@ -186,6 +188,8 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.copyCoords': 'Copiar coords.',
       'popup.shareLocation': 'Compartir',
       'popup.waze': 'Waze',
+      'popup.showActions': 'Mostrar acciones',
+      'popup.hideActions': 'Ocultar acciones',
       'measure.from': 'Midiendo desde',
       'measure.hint': 'Toca el mapa o un corredor para actualizar el punto final.<br>Cierra este popup para terminar.',
       'measure.info': 'Midiendo: toca el mapa o un corredor para elegir o actualizar el segundo punto.',
@@ -295,6 +299,8 @@ import { useL10n } from '/vendor/use-l10n.js';
       'popup.copyCoords': 'Copiar coords.',
       'popup.shareLocation': 'Compartilhar',
       'popup.waze': 'Waze',
+      'popup.showActions': 'Mostrar ações',
+      'popup.hideActions': 'Ocultar ações',
       'measure.from': 'Medindo a partir de',
       'measure.hint': 'Toque no mapa ou em um atleta para atualizar o ponto final.<br>Feche este popup para parar.',
       'measure.info': 'Medindo: toque no mapa ou em um atleta para escolher ou atualizar o segundo ponto.',
@@ -376,6 +382,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     racers: [],
     selectedRacerIds: new Set(),
     visibleRaceTrackIds: new Set(),
+    expandedRacerPopupIds: new Set(),
     meMarker: null,
     accuracyCircle: null,
     connector: null,
@@ -555,6 +562,13 @@ import { useL10n } from '/vendor/use-l10n.js';
     }
   });
   document.addEventListener('click', (event) => {
+    const popupActionsToggle = event.target.closest('[data-toggle-racer-popup-actions]');
+    if (popupActionsToggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleRacerPopupActions(popupActionsToggle.dataset.toggleRacerPopupActions);
+      return;
+    }
     const followButton = event.target.closest('[data-follow-racer]');
     if (followButton) {
       event.preventDefault();
@@ -1029,6 +1043,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       if (!marker) {
         marker = L.marker(ll, { icon, zIndexOffset: selected ? 4500 : 4000, title: raceMarkerTitle(racer), bubblingMouseEvents: false }).addTo(state.layers);
         marker.on('click', (event) => handleMeasurableMarkerClick(marker, event));
+        marker.on('popupclose', () => state.expandedRacerPopupIds.delete(raceRacerPopupKey(racer.id)));
         state.racerMarkers.set(racer.id, marker);
       } else {
         marker.setLatLng(ll);
@@ -1036,12 +1051,15 @@ import { useL10n } from '/vendor/use-l10n.js';
         marker.setZIndexOffset(selected ? 4500 : 4000);
         marker.options.title = raceMarkerTitle(racer);
       }
-      marker.bindPopup(raceRacerPopupHtml(racer), { autoPan: false, keepInView: false });
+      const popupHtml = raceRacerPopupHtml(racer);
+      marker.bindPopup(popupHtml, { autoPan: false, keepInView: false });
+      if (marker.isPopupOpen()) marker.setPopupContent(popupHtml);
     }
     for (const [id, marker] of state.racerMarkers.entries()) {
       if (!seen.has(id)) {
         state.layers.removeLayer(marker);
         state.racerMarkers.delete(id);
+        state.expandedRacerPopupIds.delete(raceRacerPopupKey(id));
       }
     }
     renderRaceTracks();
@@ -1070,7 +1088,39 @@ import { useL10n } from '/vendor/use-l10n.js';
     const trackButton = hasTrack
       ? `<button type="button" data-toggle-track-racer="${escapeHtml(racer.id)}">${trackVisible ? 'Hide track' : 'Show track'}</button>`
       : '<button type="button" disabled title="The active source has not published enough history points for this racer yet">No track yet</button>';
-    return `${locationPopupHtml(racer.name, r.lat, r.lon, details)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button>${trackButton}</div>${sourceTrackButtonsHtml(racer, trackVisible)}`;
+    const popupKey = raceRacerPopupKey(racer.id);
+    const actions = `${mapLinksHtml(r.lat, r.lon, racer.name)}<div class="map-popup-actions"><button type="button" data-follow-racer="${escapeHtml(racer.id)}">${selected ? 'Unfollow racer' : 'Follow racer'}</button>${trackButton}</div>${sourceTrackButtonsHtml(racer, trackVisible)}`;
+    return racerPopupShell(popupKey, locationPopupInfoHtml(racer.name, r.lat, r.lon, details), actions);
+  }
+
+  function raceRacerPopupKey(racerId) {
+    return `race:${racerId}`;
+  }
+
+  function racerPopupShell(popupKey, infoHtml, actionsHtml) {
+    const expanded = state.expandedRacerPopupIds.has(popupKey);
+    const toggleText = expanded ? t('popup.hideActions') : t('popup.showActions');
+    const actions = expanded ? `<div class="racer-popup-actions">${actionsHtml}</div>` : '';
+    return `${infoHtml}${actions}<button type="button" class="racer-popup-toggle-actions" data-toggle-racer-popup-actions="${escapeHtml(popupKey)}" aria-expanded="${expanded}">${toggleText}</button>`;
+  }
+
+  function toggleRacerPopupActions(popupKey) {
+    if (!popupKey) return;
+    if (state.expandedRacerPopupIds.has(popupKey)) state.expandedRacerPopupIds.delete(popupKey);
+    else state.expandedRacerPopupIds.add(popupKey);
+    refreshOpenRacerPopup(popupKey);
+  }
+
+  function refreshOpenRacerPopup(popupKey) {
+    if (popupKey === 'solo') {
+      if (state.racerMarker?.isPopupOpen() && state.racer) state.racerMarker.setPopupContent(soloRacerPopupHtml(state.racer));
+      return;
+    }
+    if (!popupKey.startsWith('race:')) return;
+    const racerId = popupKey.slice(5);
+    const marker = state.racerMarkers.get(racerId);
+    const racer = state.racers.find((item) => item.id === racerId);
+    if (marker?.isPopupOpen() && racer?.position) marker.setPopupContent(raceRacerPopupHtml(racer));
   }
 
   function sourceDiagnosticsHtml(racer) {
@@ -1869,8 +1919,11 @@ import { useL10n } from '/vendor/use-l10n.js';
     if (!state.racerMarker) {
       state.racerMarker = L.marker(ll, { icon, zIndexOffset: 4000, title: r.name, bubblingMouseEvents: false }).addTo(state.layers);
       state.racerMarker.on('click', (event) => handleMeasurableMarkerClick(state.racerMarker, event));
+      state.racerMarker.on('popupclose', () => state.expandedRacerPopupIds.delete('solo'));
     } else { state.racerMarker.setLatLng(ll); state.racerMarker.setIcon(icon); }
-    state.racerMarker.bindPopup(locationPopupHtml(r.name, r.lat, r.lon, `${t('popup.speed')}: ${escapeHtml(r.speedText)}<br>${t('popup.elev')}: ${formatElevation(r.ele)}<br>${t('popup.course')}: ${escapeHtml(r.courseText)}<br>${t('popup.updated')}: ${escapeHtml(formatUpdatedTime(r))}`), { autoPan: false, keepInView: false });
+    const popupHtml = soloRacerPopupHtml(r);
+    state.racerMarker.bindPopup(popupHtml, { autoPan: false, keepInView: false });
+    if (state.racerMarker.isPopupOpen()) state.racerMarker.setPopupContent(popupHtml);
     if (r.history) state.racerTrail.setLatLngs(r.history.map((p) => [p.lat, p.lon]));
     updateSourceFeaturesMenu();
     updateConnector();
@@ -2024,8 +2077,17 @@ import { useL10n } from '/vendor/use-l10n.js';
     }
   }
 
+  function soloRacerPopupHtml(r) {
+    const details = `${t('popup.speed')}: ${escapeHtml(r.speedText)}<br>${t('popup.elev')}: ${formatElevation(r.ele)}<br>${t('popup.course')}: ${escapeHtml(r.courseText)}<br>${t('popup.updated')}: ${escapeHtml(formatUpdatedTime(r))}`;
+    return racerPopupShell('solo', locationPopupInfoHtml(r.name, r.lat, r.lon, details), mapLinksHtml(r.lat, r.lon, r.name));
+  }
+
   function locationPopupHtml(title, lat, lon, details = '') {
-    return `<b>${escapeHtml(title)}</b><br>${lat.toFixed(6)}, ${lon.toFixed(6)}${details ? `<br>${details}` : ''}${mapLinksHtml(lat, lon, title)}`;
+    return `${locationPopupInfoHtml(title, lat, lon, details)}${mapLinksHtml(lat, lon, title)}`;
+  }
+
+  function locationPopupInfoHtml(title, lat, lon, details = '') {
+    return `<b>${escapeHtml(title)}</b><br>${lat.toFixed(6)}, ${lon.toFixed(6)}${details ? `<br>${details}` : ''}`;
   }
 
   function mapLinksHtml(lat, lon, title) {
