@@ -1031,11 +1031,13 @@ import { useL10n } from '/vendor/use-l10n.js';
       const activity = positionActivity(r);
       const activityIcon = racerMarkerIcon(activity);
       const trackVisible = hasVisibleRaceTrack(racer.id);
-      const highlighted = selected || trackVisible;
-      const color = highlighted ? racerColor(racer.id) : '#334155';
-      const iconBackground = highlighted ? color : 'transparent';
+      const existingMarker = state.racerMarkers.get(racer.id);
+      const popupOpen = !!existingMarker?.isPopupOpen?.();
+      const highlighted = selected || trackVisible || popupOpen;
+      const color = highlighted ? racerColor(racer.id) : '#0f172a';
+      const iconBackground = highlighted ? color : 'rgba(255,255,255,.88)';
       const iconInk = highlighted ? '#fff' : '#0f172a';
-      const iconBorder = highlighted ? '#fff' : 'rgba(15,23,42,.72)';
+      const iconBorder = highlighted ? '#fff' : 'rgba(15,23,42,.82)';
       const offset = markerOffsets.get(racer.id) || [0, 0];
       const iconOpacity = stale ? 0.6 : 1;
       const labelStyle = racerLabelStyle(offset, iconOpacity);
@@ -1044,9 +1046,9 @@ import { useL10n } from '/vendor/use-l10n.js';
       const badgeHtml = badge ? `<div class="racer-status-badge" title="${badgeTitle}" style="position:absolute;right:-5px;top:-7px;width:17px;height:17px;border-radius:50%;background:#f97316;color:#fff;border:2px solid #fff;font:900 11px/13px system-ui;text-align:center;box-shadow:0 1px 5px rgba(0,0,0,.5)">${badge}</div>` : '';
       const icon = L.divIcon({
         className: 'racer-icon-wrap', iconSize: [160, 32], iconAnchor: [14 - offset[0], 14 - offset[1]], popupAnchor: [0, -18],
-        html: `<div class="racer-icon has-symbol ${activity || 'stationary'} ${selected ? 'selected' : ''} ${trackVisible ? 'track-visible' : ''} ${highlighted ? 'highlighted' : 'muted'}" style="--racer-bg:${iconBackground};--racer-color:${color};--racer-ink:${iconInk};--racer-border:${iconBorder};opacity:${iconOpacity}">${badgeHtml}<span class="racer-activity-symbol">${activityIcon}</span><div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.35}"></div></div><div class="racer-label ${selected ? 'selected' : ''}" style="${labelStyle}">${conflict ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
+        html: `<div class="racer-icon has-symbol ${activity || 'stationary'} ${selected ? 'selected' : ''} ${trackVisible ? 'track-visible' : ''} ${popupOpen ? 'popup-open' : ''} ${highlighted ? 'highlighted' : 'muted'}" style="--racer-bg:${iconBackground};--racer-color:${color};--racer-ink:${iconInk};--racer-border:${iconBorder};opacity:${iconOpacity}">${badgeHtml}<span class="racer-activity-symbol">${activityIcon}</span><div class="racer-arrow" style="border-bottom-color:${color};transform:rotate(${Number.isFinite(r.courseDeg) ? r.courseDeg : 0}deg);opacity:${Number.isFinite(r.courseDeg) ? 1 : 0.7}"></div></div><div class="racer-label ${selected || popupOpen ? 'selected' : ''}" style="${labelStyle}">${conflict ? '! ' : ''}${escapeHtml(racer.name)}</div>`,
       });
-      let marker = state.racerMarkers.get(racer.id);
+      let marker = existingMarker;
       if (!marker) {
         marker = L.marker(ll, { icon, zIndexOffset: selected ? 4500 : 4000, title: raceMarkerTitle(racer), bubblingMouseEvents: false }).addTo(state.layers);
         marker.on('click', (event) => handleMeasurableMarkerClick(marker, event));
@@ -1056,7 +1058,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       } else {
         marker.setLatLng(ll);
         marker.setIcon(icon);
-        marker.setZIndexOffset(selected ? 4500 : 4000);
+        marker.setZIndexOffset(popupOpen ? 4600 : selected ? 4500 : 4000);
         marker.options.title = raceMarkerTitle(racer);
       }
       syncMarkerPopup(marker, raceRacerPopupHtml(racer), racerPopupOptions());
