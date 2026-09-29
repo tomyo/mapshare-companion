@@ -712,6 +712,12 @@ import { useL10n } from '/vendor/use-l10n.js';
       state.racers = race.racers;
       indexFlymasterSources();
       state.sourceFeatureSource = race.sourceFeatureSource;
+      if (state.sourceFeatureSource) {
+        loadMapFeatures(state.sourceFeatureSource.name).catch((err) => console.warn('Race map features load failed', err));
+      }
+      if (race.flymasterTaskId) {
+        maybeLoadFlymasterTask(race.flymasterTaskId, race.flymasterGroupId);
+      }
       state.selectedRacerIds = loadSelectedRacers(race.id);
       preferFollowedMeFitMode();
       state.visibleRaceTrackIds = loadVisibleRaceTracks(race.id);
@@ -2748,6 +2754,11 @@ import { useL10n } from '/vendor/use-l10n.js';
     return /^\d{1,10}$/.test(raw) ? raw : '';
   }
 
+  function parseFlymasterTaskId(value) {
+    const raw = String(value || '').trim();
+    return /^\d{1,12}$/.test(raw) ? raw : '';
+  }
+
   function parseFlymasterRaceParams(params, pathname) {
     const pathGroup = pathname.match(/^\/race\/flymaster\/(\d{1,10})$/)?.[1] || '';
     const raw = pathGroup || params.get('flymasterGroup') || params.get('flymaster') || params.get('grp') || '';
@@ -2787,6 +2798,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     const raceTimezone = String(config.RaceTimezone || config.Timezone || spec.timezone || 'America/Sao_Paulo').trim();
     const rows = await getSheetDataByName(spec.id, config.RacersSheet || spec.racersSheet || 'Racers').catch(() => getSheetData(spec.id, spec.gid));
     const flymasterGroupId = parseFlymasterGroupId(config.FlymasterGroup || config.FlymasterGrp || config.Group || spec.flymasterGroupId || '');
+    const flymasterTaskId = parseFlymasterTaskId(config.FlymasterTask || config.Task || spec.flymasterTaskId || '');
     const racers = rows.map(rowToRacer).filter(Boolean);
     if (!racers.length) throw new Error('No racers with supported sources found in sheet.');
     return {
@@ -2796,8 +2808,9 @@ import { useL10n } from '/vendor/use-l10n.js';
       end: parseRaceDateConfig(config.RaceEnd || config.End || spec.end || '', raceTimezone),
       timezone: raceTimezone,
       flymasterGroupId,
+      flymasterTaskId,
       racers,
-      sourceFeatureSource: null,
+      sourceFeatureSource: racers.find((r) => r.useMapFeatures)?.sources.find((s) => s.type === 'garmin-mapshare') || null,
     };
   }
 
