@@ -56,7 +56,7 @@ Production deployment:
 https://mapshare-companion.vercel.app/          # launcher: enter race or track solo
 https://mapshare-companion.vercel.app/nhayes    # solo Garmin MapShare
 https://mapshare-companion.vercel.app/spot/<spot-feed-id>  # solo SPOT
-https://mapshare-companion.vercel.app/race/transcapixaba-2026
+https://mapshare-companion.vercel.app/race/transcapixaba-2026  # default race sheet (semantic url based on config)
 https://mapshare-companion.vercel.app/?sheet=<google-sheet-id>&gid=0
 ```
 

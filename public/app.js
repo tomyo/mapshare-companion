@@ -9,9 +9,7 @@ import { useL10n } from '/vendor/use-l10n.js';
   const SOURCE_FEATURES_KEY = 'garminRaceTracker.sourceFeaturesVisible';
   const LANGUAGE_KEY = 'garminRaceTracker.language';
   const RACE_FIT_MODE_KEY = 'garminRaceTracker.raceFitMode';
-  const TRANSCAPIXABA_PATH = '/race/transcapixaba-2026';
-  const TRANSCAPIXABA_START = '2026-07-12T03:00:00Z';
-  const TRANSCAPIXABA_END = '2026-07-26T02:59:59Z';
+  const DEFAULT_RACE_SHEET_ID = '1h-iNS8rby-P8WkEKP98rxMRpEMdOrUjznQxjr9weH8g';
   const HISTORY_CACHE_VERSION = 1;
   const REFRESH_MS = 60000;
   const SPOT_REFRESH_MS = 150000;
@@ -99,8 +97,9 @@ import { useL10n } from '/vendor/use-l10n.js';
       'kml.counts': '{points} points, {lines} lines',
       'menu.enterRace': 'Enter race',
       'menu.leaveRace': 'Leave race mode',
-      'menu.enterRaceTitle': 'Enter Transcapixaba 2026 race mode',
+      'menu.enterRaceTitle': 'Enter {race} race mode',
       'menu.leaveRaceTitle': 'Return to the launcher',
+      'setup.enterRace': 'Enter {race}',
       'features.raceTask': 'race task',
       'features.garmin': 'Garmin features',
       'features.hide': 'Hide {label}',
@@ -210,8 +209,9 @@ import { useL10n } from '/vendor/use-l10n.js';
       'kml.counts': '{points} puntos, {lines} líneas',
       'menu.enterRace': 'Entrar a carrera',
       'menu.leaveRace': 'Salir del modo carrera',
-      'menu.enterRaceTitle': 'Entrar al modo carrera Transcapixaba 2026',
+      'menu.enterRaceTitle': 'Entrar al modo carrera {race}',
       'menu.leaveRaceTitle': 'Volver al inicio',
+      'setup.enterRace': 'Entrar a la carrera {race}',
       'features.raceTask': 'tarea de carrera',
       'features.garmin': 'elementos Garmin',
       'features.hide': 'Ocultar {label}',
@@ -321,8 +321,9 @@ import { useL10n } from '/vendor/use-l10n.js';
       'kml.counts': '{points} pontos, {lines} linhas',
       'menu.enterRace': 'Entrar na prova',
       'menu.leaveRace': 'Sair do modo prova',
-      'menu.enterRaceTitle': 'Entrar no modo prova Transcapixaba 2026',
+      'menu.enterRaceTitle': 'Entrar no modo prova {race}',
       'menu.leaveRaceTitle': 'Voltar para o início',
+      'setup.enterRace': 'Entrar na prova {race}',
       'features.raceTask': 'tarefa da prova',
       'features.garmin': 'recursos Garmin',
       'features.hide': 'Ocultar {label}',
@@ -411,6 +412,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     firstFitDone: false,
     flymaster: null,
     flymasterSourceIndex: new Map(),
+    defaultRaceName: 'Race',
   };
 
   let translateIntoLanguage = async () => {};
@@ -512,9 +514,18 @@ import { useL10n } from '/vendor/use-l10n.js';
     updateSourceFeaturesMenu();
     updatePanel();
     renderRacerList();
+    const enterRaceBtn = $('enter-race');
+    if (enterRaceBtn) {
+      enterRaceBtn.textContent = t('setup.enterRace', { race: state.defaultRaceName });
+    }
   }
 
   await initLanguage();
+
+  getSheetConfig(DEFAULT_RACE_SHEET_ID, 'Config').then(config => {
+    state.defaultRaceName = config.RaceName || config.Name || 'Race';
+    refreshLanguageSensitiveUi();
+  }).catch(err => console.warn('Failed to load default race config', err));
 
   document.querySelectorAll('[data-language-toggle]').forEach((button) => button.addEventListener('click', cycleLanguage));
 
@@ -529,7 +540,7 @@ import { useL10n } from '/vendor/use-l10n.js';
       location.assign(`/spot/${encodeURIComponent(source.id)}`);
     }
   });
-  $('enter-race').addEventListener('click', () => location.assign(TRANSCAPIXABA_PATH));
+  $('enter-race').addEventListener('click', () => location.assign(state.defaultRaceName ? `/race/${slugify(state.defaultRaceName)}` : `/race/race`));
 
   const menuToggle = $('track-menu-toggle');
   const trackMenu = $('track-menu');
@@ -2344,7 +2355,7 @@ import { useL10n } from '/vendor/use-l10n.js';
     if (state.raceMode) {
       location.assign('/');
     } else {
-      location.assign(TRANSCAPIXABA_PATH);
+      location.assign(state.defaultRaceName ? `/race/${slugify(state.defaultRaceName)}` : `/race/race`);
     }
   }
 
@@ -2368,7 +2379,7 @@ import { useL10n } from '/vendor/use-l10n.js';
   function updateRaceSwitchMenu() {
     const button = $('switch-race');
     button.textContent = state.raceMode ? t('menu.leaveRace') : t('menu.enterRace');
-    button.title = state.raceMode ? t('menu.leaveRaceTitle') : t('menu.enterRaceTitle');
+    button.title = state.raceMode ? t('menu.leaveRaceTitle') : t('menu.enterRaceTitle', { race: state.defaultRaceName });
     $('change-map').classList.toggle('hidden', state.raceMode);
   }
 
@@ -2745,7 +2756,9 @@ import { useL10n } from '/vendor/use-l10n.js';
   }
 
   function parseRaceSheetParams(params, pathname) {
-    if (pathname === TRANSCAPIXABA_PATH) return { id: '1h-iNS8rby-P8WkEKP98rxMRpEMdOrUjznQxjr9weH8g', gid: '0', name: 'Transcapixaba 2026', start: TRANSCAPIXABA_START, end: TRANSCAPIXABA_END };
+    if (pathname.startsWith('/race/') && !pathname.startsWith('/race/flymaster/')) {
+      return { id: DEFAULT_RACE_SHEET_ID, gid: '0', name: '', start: '', end: '' };
+    }
     const raw = params.get('raceSheet') || params.get('sheet') || params.get('sheetId') || '';
     if (!raw) return null;
     const parsed = parseGoogleSheetRef(raw);

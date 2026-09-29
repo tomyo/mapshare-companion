@@ -1,7 +1,7 @@
 {
   "donate": "Doar",
   "setup.tagline": "Um mapa para equipes de apoio em provas e rastreamento solo.",
-  "setup.enterRace": "Entrar na prova Transcapixaba 2026",
+  "setup.enterRace": "Entrar na prova {race}",
   "setup.trackSolo": "Rastrear solo",
   "setup.examples": "Exemplos: share.garmin.com/nhayes, nhayes, ou um ID/link de feed FindMeSPOT.",
   "menu.importKml": "Importar KML",
